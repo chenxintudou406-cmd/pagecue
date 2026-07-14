@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>前衍提醒 PageCue 规则测试页</title>
+    <style>
+      *{box-sizing:border-box}body{margin:0;background:#f4f5ef;color:#172326;font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif}.shell{width:min(900px,calc(100% - 36px));margin:54px auto}.eyebrow{color:#0d766e;font-size:11px;letter-spacing:.15em;font-weight:800}h1{max-width:650px;margin:12px 0;font-size:44px;line-height:1.12;letter-spacing:-.05em}header p{max-width:620px;color:#677577;line-height:1.8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:35px}.card{padding:28px;border:1px solid #dce2db;border-radius:16px;background:white}.card:first-child{border-top:5px solid #d9f26a}.card h2{margin:0 0 10px;font-size:20px}.card p{color:#657477;line-height:1.7}.price{font-size:36px;font-weight:900;color:#0d766e}.button{display:inline-block;margin-top:12px;padding:10px 14px;border-radius:9px;background:#0d766e;color:white}#dynamic{min-height:80px}.hint{margin-top:25px;padding:15px;border-radius:10px;background:#102d32;color:#c6d5d3;font-size:12px}@media(max-width:650px){.grid{grid-template-columns:1fr}h1{font-size:34px}}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header><span class="eyebrow">LOCAL MATCHING DEMO</span><h1>验证关键词提醒与动态页面识别</h1><p>这个页面由本地服务提供，不会把正文发送到扩展服务端。授权当前网站并刷新后，示例规则将识别下面的“报价”和“客户”内容。</p></header>
+      <div class="grid">
+        <article class="card"><h2>企业版报价</h2><p>适合需要统一知识提示的销售团队。签订年度合同前，请核对客户规模和合同期限。</p><span class="price">¥199</span><span>/ 人 / 月</span><div><span class="button">申请试用</span></div></article>
+        <article class="card"><h2>异步内容测试</h2><p>点击按钮，模拟 SPA 在不刷新页面的情况下加载新正文。</p><button id="load" class="button">加载动态客户案例</button><div id="dynamic"></div></article>
+      </div>
+      <div class="hint">预期结果：首次加载命中“报价”组织提醒和“客户”个人备忘；动态加入内容后，MutationObserver 会触发节流重扫，但冷却时间会阻止重复弹窗。</div>
+    </div>
+    <script>document.querySelector("#load").addEventListener("click",()=>{setTimeout(()=>{document.querySelector("#dynamic").innerHTML="<p><strong>客户案例：</strong>某销售团队用情境提醒降低了新人培训成本。</p>"},500)})</script>
+  </body>
+</html>

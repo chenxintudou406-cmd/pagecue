@@ -1,0 +1,327 @@
+{
+  "meta": {
+    "version": 10,
+    "organizationId": "org_demo",
+    "organizationName": "示范团队"
+  },
+  "settings": {
+    "defaultCooldownMinutes": 30,
+    "recommendedSitePatterns": [
+      "http://localhost/*",
+      "https://*.wikipedia.org/*"
+    ],
+    "privacyMode": "local_match"
+  },
+  "groups": [
+    {
+      "id": "group_sales",
+      "name": "销售组",
+      "memberCount": 3
+    },
+    {
+      "id": "group_support",
+      "name": "客服组",
+      "memberCount": 2
+    }
+  ],
+  "pageGroups": [
+    {
+      "id": "page_group_demo",
+      "name": "演示页面",
+      "description": "本地演示页与知识验证页面",
+      "sitePatterns": [
+        "http://localhost/*",
+        "http://127.0.0.1:8787/*",
+        "https://*.wikipedia.org/*"
+      ],
+      "createdAt": "2026-07-14T00:00:00.000Z",
+      "updatedAt": "2026-07-14T00:00:00.000Z"
+    },
+    {
+      "id": "page_group_biochem",
+      "name": "前衍询单页面",
+      "description": "前衍化学询单与产品详情页面",
+      "sitePatterns": [
+        "https://www.biochemsafebuy.com/*"
+      ],
+      "createdAt": "2026-07-14T00:00:00.000Z",
+      "updatedAt": "2026-07-14T00:00:00.000Z"
+    }
+  ],
+  "users": [
+    {
+      "id": "user_demo",
+      "name": "演示成员",
+      "role": "member",
+      "groupIds": [
+        "group_sales"
+      ]
+    },
+    {
+      "id": "admin_demo",
+      "name": "演示管理员",
+      "role": "admin",
+      "groupIds": [
+        "group_sales",
+        "group_support"
+      ]
+    }
+  ],
+  "memos": [
+    {
+      "id": "memo_org_quote",
+      "scope": "organization",
+      "ownerId": null,
+      "title": "报价页面提醒",
+      "body": "看到 **企业版报价** 时，请先确认客户规模与合同年限，再使用折扣。\n\n如需例外价格，请直接联系销售负责人确认。",
+      "tags": [
+        "销售",
+        "报价",
+        "SOP"
+      ],
+      "links": [],
+      "rule": {
+        "pageScope": "page_groups",
+        "pageGroupIds": [
+          "page_group_demo"
+        ],
+        "sitePatterns": [
+          "http://localhost/*",
+          "https://*.wikipedia.org/*"
+        ],
+        "includeTerms": [
+          "报价"
+        ],
+        "excludeTerms": [
+          "招聘"
+        ],
+        "operator": "AND",
+        "caseSensitive": false,
+        "useRegex": false,
+        "cooldownMinutes": 30
+      },
+      "targetGroupIds": [
+        "group_sales"
+      ],
+      "priority": "important",
+      "status": "published",
+      "startsAt": null,
+      "expiresAt": null,
+      "version": 1,
+      "createdAt": "2026-07-14T00:00:00.000Z",
+      "updatedAt": "2026-07-14T00:00:00.000Z"
+    },
+    {
+      "id": "memo_a8bda8b1-e04f-4039-b609-d55d3ade59f7",
+      "scope": "personal",
+      "ownerId": "user_demo",
+      "title": "这是高志萍关注的询单",
+      "body": "高志萍群里提过这是他关注的产品",
+      "tags": [
+        "关注产品"
+      ],
+      "links": [],
+      "rule": {
+        "pageScope": "page_groups",
+        "pageGroupIds": [
+          "page_group_biochem"
+        ],
+        "sitePatterns": [
+          "https://www.biochemsafebuy.com/*"
+        ],
+        "includeTerms": [
+          "15708-41-5"
+        ],
+        "excludeTerms": [],
+        "operator": "AND",
+        "caseSensitive": false,
+        "useRegex": false,
+        "cooldownMinutes": 30
+      },
+      "targetGroupIds": [],
+      "priority": "normal",
+      "status": "published",
+      "startsAt": null,
+      "expiresAt": null,
+      "version": 1,
+      "createdAt": "2026-07-14T07:31:45.830Z",
+      "updatedAt": "2026-07-14T07:31:45.830Z"
+    },
+    {
+      "id": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "scope": "personal",
+      "ownerId": "user_demo",
+      "title": "陈昕的询单",
+      "body": "**陈昕**3月15日询单",
+      "tags": [
+        "关注询单"
+      ],
+      "links": [],
+      "rule": {
+        "pageScope": "page_groups",
+        "pageGroupIds": [
+          "page_group_biochem"
+        ],
+        "sitePatterns": [
+          "https://www.biochemsafebuy.com/*"
+        ],
+        "includeTerms": [
+          "42288-26-6"
+        ],
+        "excludeTerms": [],
+        "operator": "AND",
+        "caseSensitive": false,
+        "useRegex": false,
+        "cooldownMinutes": 30
+      },
+      "targetGroupIds": [],
+      "priority": "normal",
+      "status": "published",
+      "startsAt": null,
+      "expiresAt": null,
+      "version": 1,
+      "createdAt": "2026-07-14T07:57:31.581Z",
+      "updatedAt": "2026-07-14T07:57:31.581Z"
+    }
+  ],
+  "tools": [
+    {
+      "id": "tool_coa_generator",
+      "scope": "organization",
+      "ownerId": null,
+      "category": "质量工具",
+      "title": "COA生成器",
+      "description": "生成前衍和瀚香的 COA",
+      "url": "https://coa.herotop.cn/",
+      "icon": "COA",
+      "targetGroupIds": [],
+      "status": "published",
+      "sortOrder": 10,
+      "createdAt": "2026-07-14T00:00:00.000Z",
+      "updatedAt": "2026-07-14T00:00:00.000Z"
+    }
+  ],
+  "events": [
+    {
+      "id": "event_53c74e56-204d-474f-b24d-ba3965bb55bc",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_5431a9bd-2e6b-4309-9d24-dddfb6757434",
+      "ruleId": "memo_5431a9bd-2e6b-4309-9d24-dddfb6757434",
+      "domain": "www.biochemsafebuy.com",
+      "action": "triggered",
+      "presentation": "inline",
+      "createdAt": "2026-07-14T07:17:27.737Z"
+    },
+    {
+      "id": "event_2e349e7e-4f66-42eb-aaaa-a0bf6f06de4e",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_5431a9bd-2e6b-4309-9d24-dddfb6757434",
+      "ruleId": "memo_5431a9bd-2e6b-4309-9d24-dddfb6757434",
+      "domain": "www.biochemsafebuy.com",
+      "action": "confirmed",
+      "presentation": "sidepanel",
+      "createdAt": "2026-07-14T07:17:56.665Z"
+    },
+    {
+      "id": "event_8a6627e8-c389-48cf-b502-4261206f4bab",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_a8bda8b1-e04f-4039-b609-d55d3ade59f7",
+      "ruleId": "memo_a8bda8b1-e04f-4039-b609-d55d3ade59f7",
+      "domain": "www.biochemsafebuy.com",
+      "action": "triggered",
+      "presentation": "inline",
+      "createdAt": "2026-07-14T07:31:57.790Z"
+    },
+    {
+      "id": "event_e7a307e8-df5b-4faa-8d05-fffd5d912a46",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_a8bda8b1-e04f-4039-b609-d55d3ade59f7",
+      "ruleId": "memo_a8bda8b1-e04f-4039-b609-d55d3ade59f7",
+      "domain": "www.biochemsafebuy.com",
+      "action": "helpful",
+      "presentation": "sidepanel",
+      "createdAt": "2026-07-14T07:35:47.775Z"
+    },
+    {
+      "id": "event_825a96d8-419f-45bd-b65e-d09238d7bd35",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_a8bda8b1-e04f-4039-b609-d55d3ade59f7",
+      "ruleId": "memo_a8bda8b1-e04f-4039-b609-d55d3ade59f7",
+      "domain": "www.biochemsafebuy.com",
+      "action": "snoozed",
+      "presentation": "sidepanel",
+      "createdAt": "2026-07-14T07:48:16.833Z"
+    },
+    {
+      "id": "event_f03ac003-1b30-45bb-b34f-bf34a84610a6",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "ruleId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "domain": "www.biochemsafebuy.com",
+      "action": "triggered",
+      "presentation": "inline",
+      "createdAt": "2026-07-14T07:57:31.733Z"
+    },
+    {
+      "id": "event_0b880977-8389-49c8-bea6-f620c014f701",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "ruleId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "domain": "www.biochemsafebuy.com",
+      "action": "triggered",
+      "presentation": "inline",
+      "createdAt": "2026-07-14T07:57:31.995Z"
+    },
+    {
+      "id": "event_0f8b8a69-a4d5-485a-8443-4ca5f38b8a94",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "ruleId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "domain": "www.biochemsafebuy.com",
+      "action": "triggered",
+      "presentation": "inline",
+      "createdAt": "2026-07-14T07:57:35.016Z"
+    },
+    {
+      "id": "event_b2a5a864-e8ba-4a5d-98e3-4d82ac7ef677",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "ruleId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "domain": "www.biochemsafebuy.com",
+      "action": "triggered",
+      "presentation": "inline",
+      "createdAt": "2026-07-14T07:57:52.725Z"
+    },
+    {
+      "id": "event_161a43de-f8be-491a-8a95-1ef8dab2b0ee",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "ruleId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "domain": "www.biochemsafebuy.com",
+      "action": "triggered",
+      "presentation": "inline",
+      "createdAt": "2026-07-14T08:15:08.996Z"
+    },
+    {
+      "id": "event_ab8d4764-c36d-41dc-825a-ff61af763b17",
+      "organizationId": "org_demo",
+      "userId": "user_demo",
+      "memoId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "ruleId": "memo_608efe7e-204d-4e72-8e42-cbbc588a94f0",
+      "domain": "www.biochemsafebuy.com",
+      "action": "triggered",
+      "presentation": "inline",
+      "createdAt": "2026-07-14T08:40:43.997Z"
+    }
+  ]
+}

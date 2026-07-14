@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "前衍提醒 PageCue",
+  "version": "1.6.0",
+  "description": "在已授权网页中匹配关键词，适时呈现个人备忘、组织知识和团队工具。",
+  "permissions": [
+    "storage",
+    "scripting",
+    "sidePanel",
+    "notifications",
+    "tabs"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8787/*",
+    "http://localhost:8787/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  },
+  "action": {
+    "default_title": "打开前衍提醒",
+    "default_icon": {
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/icon-128.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

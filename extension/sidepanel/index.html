@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>前衍提醒 · PageCue</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand"><img src="../assets/icon-128.png" alt="" /><div><strong>前衍提醒</strong><small id="workspace-name">PageCue · 本地工作区</small></div></div>
+      <button id="open-settings" class="round-button" title="设置">⌘</button>
+    </header>
+
+    <div class="search"><span>⌕</span><input id="global-search" placeholder="搜索备忘、提醒和工具" /><kbd>Ctrl K</kbd></div>
+
+    <nav>
+      <button class="active" data-tab="alerts">当前提醒 <span id="alert-count">0</span></button>
+      <button data-tab="memos">备忘库</button>
+      <button data-tab="tools">工具箱</button>
+    </nav>
+
+    <main>
+      <section id="tab-alerts" class="tab active">
+        <div class="section-head"><div><p class="kicker">ON THIS PAGE</p><h1>当前页面提醒</h1></div><button id="refresh-context" class="icon-button" title="刷新">↻</button></div>
+        <div id="page-context" class="page-context"></div>
+        <div id="alert-list" class="card-list"></div>
+      </section>
+
+      <section id="tab-memos" class="tab">
+        <div class="section-head"><div><p class="kicker">MEMORY LIBRARY</p><h1>我的备忘库</h1></div><button id="new-personal" class="add-button">＋ 新建</button></div>
+        <div class="scope-filter"><button class="active" data-scope="all">全部</button><button data-scope="personal">我的</button><button data-scope="organization">组织</button></div>
+        <div id="memo-list" class="card-list"></div>
+      </section>
+
+      <section id="tab-tools" class="tab">
+        <div class="section-head"><div><p class="kicker">QUICK ACCESS</p><h1>团队工具箱</h1></div></div>
+        <div id="tool-list"></div>
+      </section>
+    </main>
+
+    <footer><span id="connection-dot"></span><span id="connection-text">正在连接本地服务</span><button id="footer-sync">立即同步</button></footer>
+
+    <aside id="settings-panel" class="drawer" aria-hidden="true">
+      <div class="drawer-head"><div><p class="kicker">PRIVACY & ACCESS</p><h2>设置与站点授权</h2></div><button id="close-settings" class="round-button">×</button></div>
+      <div class="privacy-note"><b>◇ 本地匹配模式</b><p>插件只读取你明确授权的网站。网页正文、表单和 Cookie 不会上传服务器。</p></div>
+      <label>本地服务地址<input id="api-base" value="http://127.0.0.1:8787" /></label>
+      <label>演示成员 ID<input id="user-id" value="user_demo" /></label>
+      <button id="save-connection" class="primary wide">保存并重新同步</button>
+      <div class="setting-section"><h3>已授权站点</h3><div id="site-list"></div></div>
+      <div class="grant-box"><input id="site-pattern" placeholder="https://crm.example.com/*" /><button id="grant-site">授权站点</button></div>
+      <button id="grant-current" class="secondary wide">授权当前网站</button>
+      <p class="setting-tip">新增授权后请刷新对应网页，以启动自动识别。</p>
+    </aside>
+    <div id="drawer-backdrop" class="backdrop"></div>
+
+    <dialog id="personal-dialog">
+      <form id="personal-form" method="dialog">
+        <div class="dialog-head"><div><p class="kicker">PERSONAL NOTE</p><h2 id="personal-title">新建个人备忘</h2></div><button type="button" data-close-dialog>×</button></div>
+        <input type="hidden" name="id" />
+        <label>标题<input name="title" required maxlength="120" placeholder="这条备忘要提醒我什么？" /></label>
+        <label>内容<textarea name="body" rows="6" placeholder="支持 **粗体** 等基础 Markdown"></textarea></label>
+        <div class="two-cols"><label>页面范围<select name="pageScope"><option value="global">全局页面</option><option value="page_groups">特定页面组</option></select></label><label data-personal-page-group hidden>页面组<select name="pageGroupId"></select></label></div>
+        <label>包含关键词<input name="includeTerms" placeholder="用逗号分隔" required /></label>
+        <label>标签<input name="tags" placeholder="个人, 客户跟进" /></label>
+        <div class="dialog-actions"><button type="button" class="ghost" data-close-dialog>取消</button><button type="submit" class="primary">保存备忘</button></div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

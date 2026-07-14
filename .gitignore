@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+dist/
+design/icon-concepts/
+*.crx
+*.pem
