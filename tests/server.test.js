@@ -5,7 +5,14 @@ const path = require("node:path");
 const os = require("node:os");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
-const { server, visibleTo, isActive, normalizeRule, resolveMemoPageGroups, cleanMemo, cleanPageGroup, eventStats } = require("../server.js");
+const { randomBytes, scryptSync } = require("node:crypto");
+const webPush = require("web-push");
+const { server, visibleTo, isActive, normalizeRule, normalizePageStrategy, normalizeAnnotation, resolveMemoPageGroups, cleanMemo, cleanSupplier, cleanPageGroup, eventStats } = require("../server.js");
+
+function testPasswordHash(password) {
+  const salt = randomBytes(16);
+  return `scrypt:${salt.toString("base64url")}:${scryptSync(password, salt, 64).toString("base64url")}`;
+}
 
 test("成员组隔离与个人所有权", () => {
   const sales = { id: "u1", groupIds: ["sales"] };
@@ -23,13 +30,69 @@ test("内容有效期和数据清洗", () => {
   assert.equal(memo.title, "测试"); assert.equal(memo.rule.operator, "OR"); assert.equal(memo.rule.cooldownMinutes, 30); assert.equal(memo.version, 1);
 });
 
+test("供应商资料只保留百分位并支持提醒引用", () => {
+  const supplier = cleanSupplier({ companyName: " 测试供应商 ", customerId: " C-100 ", matchTerms: ["测试供应商", "C-100"], metrics: { productPercentile: 105, orderPercentile: 81.25, afterSalesRate: -2 }, advantageProducts: [{ name: "氯乙酸", cas: "79-11-8", closeRate: 72 }] });
+  assert.equal(supplier.companyName, "测试供应商");
+  assert.equal(supplier.metrics.productPercentile, 100);
+  assert.equal(supplier.metrics.orderPercentile, 81.3);
+  assert.equal(supplier.metrics.afterSalesRate, 0);
+  assert.equal(Object.hasOwn(supplier.metrics, "productCount"), false);
+  assert.deepEqual(supplier.matchTerms, ["测试供应商", "C-100"]);
+  const organizationMemo = cleanMemo({ scope: "organization", title: "供应商提醒", entityRefs: [{ type: "supplier", id: supplier.id }] });
+  const personalMemo = cleanMemo({ scope: "personal", ownerId: "u1", title: "个人提醒", entityRefs: [{ type: "supplier", id: supplier.id }] });
+  assert.equal(organizationMemo.entityRefs[0].id, supplier.id);
+  assert.deepEqual(personalMemo.entityRefs, []);
+});
+
+test("正式产品包含 328px 供应商卡片和后台手工维护入口", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "admin", "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(__dirname, "..", "admin", "app.js"), "utf8");
+  const content = fs.readFileSync(path.join(__dirname, "..", "extension", "content", "content.js"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "..", "extension", "content", "content.css"), "utf8");
+  assert.match(html, /data-view="suppliers"/);
+  assert.match(html, /name="supplierId"/);
+  assert.match(html, /name="matchTerms"/);
+  assert.match(app, /api\/admin\/suppliers/);
+  assert.match(content, /GET_SUPPLIER/);
+  assert.match(css, /width:328px/);
+});
+
+test("知识、操作、个人和组织提醒共享评论入口并按需加载", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "extension", "sidepanel", "index.html"), "utf8");
+  const sidepanel = fs.readFileSync(path.join(__dirname, "..", "extension", "sidepanel", "app.js"), "utf8");
+  const content = fs.readFileSync(path.join(__dirname, "..", "extension", "content", "content.js"), "utf8");
+  assert.doesNotMatch(html, /id="comments-dialog"/);
+  assert.match(sidepanel, /function commentButton/);
+  assert.match(sidepanel, /class="inline-comments"/);
+  assert.match(sidepanel, /api\/memos\/.*\/comments/);
+  assert.match(content, /toggleCardComments/);
+  assert.match(content, /GET_MEMO_COMMENTS/);
+});
+
 test("关键词范围支持全局和特定页面组", () => {
-  const pageGroup = cleanPageGroup({ name: "询单页面", sitePatterns: ["https://example.com/inquiry/*"] });
+  const pageGroup = cleanPageGroup({
+    name: "询单页面",
+    sitePatterns: ["https://example.com/inquiry/*"],
+    strategy: { matchScope: "row", selector: ".quote-row", excludeSelector: ".summary-row" }
+  });
   const scoped = resolveMemoPageGroups({ id: "memo_scoped", rule: normalizeRule({ pageScope: "page_groups", pageGroupIds: [pageGroup.id], includeTerms: ["询单"] }) }, [pageGroup]);
   const global = resolveMemoPageGroups({ id: "memo_global", rule: normalizeRule({ pageScope: "global", sitePatterns: ["https://legacy.example/*"], includeTerms: ["公告"] }) }, [pageGroup]);
   assert.deepEqual(scoped.rule.sitePatterns, ["https://example.com/inquiry/*"]);
   assert.deepEqual(global.rule.sitePatterns, []);
   assert.deepEqual(scoped.rule.pageGroupIds, [pageGroup.id]);
+  assert.deepEqual(scoped.rule.pageStrategies, [{
+    pageGroupId: pageGroup.id,
+    sitePatterns: ["https://example.com/inquiry/*"],
+    matchScope: "row",
+    selector: ".quote-row",
+    excludeSelector: ".summary-row"
+  }]);
+  assert.deepEqual(global.rule.pageStrategies, []);
+});
+
+test("模块和同一行策略必须提供选择器", () => {
+  assert.equal(normalizePageStrategy({ matchScope: "row", selector: ".item" }).matchScope, "row");
+  assert.throws(() => cleanPageGroup({ name: "无效行策略", strategy: { matchScope: "row" } }), error => error.statusCode === 400);
 });
 
 test("匿名事件统计", () => {
@@ -37,12 +100,80 @@ test("匿名事件统计", () => {
   assert.equal(stats.openRate, 0.5); assert.equal(stats.helpfulRate, 0.5);
 });
 
-test("Manifest V3 使用可选站点权限且没有全站强制权限", () => {
+test("V2 批注迁移和锚点上限保持向后兼容", () => {
+  assert.equal(normalizeAnnotation(undefined, "normal", "organization").template, "standard");
+  assert.equal(normalizeAnnotation(undefined, "important", "organization").template, "strong");
+  assert.equal(normalizeAnnotation(undefined, "normal", "personal").template, "light");
+  const annotation = normalizeAnnotation({
+    template: "strong",
+    keywordTerms: ["危险化学品"],
+    anchors: Array.from({ length: 25 }, (_, index) => ({ pageGroupId: "group", primarySelector: `.item-${index}`, fingerprintHash: "a".repeat(64) }))
+  });
+  assert.equal(annotation.anchors.length, 20);
+  assert.equal(annotation.anchors[0].fingerprintHash, "a".repeat(64));
+  assert.equal(Object.hasOwn(annotation.anchors[0], "text"), false);
+});
+
+test("Manifest V3 在安装时获得网页权限，并按组织页面组动态注册监控", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "extension", "manifest.json"), "utf8"));
+  const worker = fs.readFileSync(path.join(__dirname, "..", "extension", "background", "service-worker.js"), "utf8");
   assert.equal(manifest.manifest_version, 3);
   assert.ok(manifest.permissions.includes("sidePanel"));
-  assert.ok(manifest.optional_host_permissions.includes("https://*/*"));
-  assert.equal(manifest.host_permissions.includes("<all_urls>"), false);
+  assert.ok(manifest.permissions.includes("alarms"));
+  assert.ok(manifest.host_permissions.includes("http://*/*"));
+  assert.ok(manifest.host_permissions.includes("https://*/*"));
+  assert.equal(manifest.optional_host_permissions, undefined);
+  assert.equal(manifest.minimum_chrome_version, "116");
+  assert.match(worker, /managedSitePatterns/);
+  assert.match(worker, /bootstrap\.pageGroups/);
+  assert.match(worker, /registerContentScripts/);
+});
+
+test("实时推送具备 Push 唤醒和每小时兜底，而不是高频轮询", () => {
+  const worker = fs.readFileSync(path.join(__dirname, "..", "extension", "background", "service-worker.js"), "utf8");
+  const admin = fs.readFileSync(path.join(__dirname, "..", "admin", "index.html"), "utf8");
+  assert.match(worker, /SYNC_INTERVAL_MINUTES = 60/);
+  assert.match(worker, /addEventListener\("push"/);
+  assert.match(worker, /requestUpdateCheck/);
+  assert.match(worker, /chrome\.runtime\.onUpdateAvailable/);
+  assert.match(admin, /发布并推送/);
+});
+
+test("搜狗 Chromium 116 缺少侧栏能力时使用弹窗兼容模式", () => {
+  const worker = fs.readFileSync(path.join(__dirname, "..", "extension", "background", "service-worker.js"), "utf8");
+  assert.match(worker, /SIDE_PANEL_AVAILABLE/);
+  assert.match(worker, /chrome\.action\.setPopup/);
+  assert.match(worker, /chrome\.tabs\.create/);
+});
+
+test("双安装包清单来自同一源码并使用不同能力基线", () => {
+  const root = path.join(__dirname, "..", ".deploy", "staging");
+  const chromeManifest = JSON.parse(fs.readFileSync(path.join(root, "chrome-edge", "manifest.json"), "utf8"));
+  const sogouManifest = JSON.parse(fs.readFileSync(path.join(root, "sogou", "manifest.json"), "utf8"));
+  assert.equal(chromeManifest.version, "3.1.2");
+  assert.equal(chromeManifest.minimum_chrome_version, "116");
+  assert.ok(chromeManifest.side_panel);
+  assert.ok(chromeManifest.permissions.includes("sidePanel"));
+  assert.equal(sogouManifest.minimum_chrome_version, "109");
+  assert.equal(sogouManifest.side_panel, undefined);
+  assert.equal(sogouManifest.permissions.includes("sidePanel"), false);
+  assert.equal(sogouManifest.action.default_popup, "sidepanel/index.html");
+  assert.ok(fs.statSync(path.join(__dirname, "..", ".deploy", "pagecue-chrome-edge-3.1.2.zip")).size > 0);
+  assert.ok(fs.statSync(path.join(__dirname, "..", ".deploy", "pagecue-sogou-3.1.2.zip")).size > 0);
+});
+
+test("批注运行时遵守搜狗兼容与页面隐私边界", () => {
+  const content = fs.readFileSync(path.join(__dirname, "..", "extension", "content", "content.js"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "..", "extension", "content", "content.css"), "utf8");
+  assert.match(content, /MAX_HIGHLIGHTS = 500/);
+  assert.match(content, /fingerprintElement/);
+  assert.match(content, /annotation_unresolved/);
+  assert.match(content, /cc-annotation-pin/);
+  assert.doesNotMatch(css, /:has\(/);
+  assert.doesNotMatch(css, /@container/);
+  const worker = fs.readFileSync(path.join(__dirname, "..", "extension", "background", "service-worker.js"), "utf8");
+  const eventPayloadSource = worker.match(/function eventPayload[\s\S]*?\n}/)?.[0] || "";
+  assert.doesNotMatch(eventPayloadSource, /pageText|matchedText|formValue|cookie|query/);
 });
 
 test("管理后台包含新版响应式与无障碍结构", () => {
@@ -56,39 +187,54 @@ test("管理后台包含新版响应式与无障碍结构", () => {
   assert.match(css, /@media \(max-width: 430px\)/);
 });
 
+test("后台新建内容不会复用编辑 ID 且反馈记录不截断", () => {
+  const adminApp = fs.readFileSync(path.join(__dirname, "..", "admin", "app.js"), "utf8");
+  const sidepanelApp = fs.readFileSync(path.join(__dirname, "..", "extension", "sidepanel", "app.js"), "utf8");
+  const worker = fs.readFileSync(path.join(__dirname, "..", "extension", "background", "service-worker.js"), "utf8");
+  const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.equal((adminApp.match(/form\.elements\.id\.value = ""/g) || []).length, 3);
+  assert.doesNotMatch(adminApp, /data\.get\("id"\)/);
+  assert.match(adminApp, /state\.editingPageGroup\?\.id/);
+  assert.match(adminApp, /state\.editingMemo\?\.id/);
+  assert.match(adminApp, /state\.editingTool\?\.id/);
+  assert.match(sidepanelApp, /form\.elements\.id\.value = ""/);
+  assert.match(sidepanelApp, /const id = state\.editing\?\.id/);
+  assert.match(sidepanelApp, /GET_DEVICE_ID/);
+  assert.doesNotMatch(worker, /eventQueue\.slice/);
+  assert.doesNotMatch(serverSource, /db\.events = db\.events\.slice/);
+});
+
 test("工具箱只保留 COA 生成器", () => {
   const db = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "data", "db.json"), "utf8"));
   assert.equal(db.tools.length, 1);
   assert.equal(db.tools[0].title, "COA生成器");
-  assert.equal(db.tools[0].description, "生成前衍和瀚香的 COA");
-  assert.equal(db.tools[0].url, "https://coa.herotop.cn/");
+  assert.equal(db.tools[0].description, "生成标准 COA");
+  assert.equal(db.tools[0].url, "https://coa.example.com/");
 });
 
-test("本地 API 可返回按成员过滤的启动数据", async t => {
+test("启动数据不再信任可手填的成员 ID", async t => {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const address = server.address();
   const response = await fetch(`http://127.0.0.1:${address.port}/api/bootstrap?userId=user_demo`);
-  assert.equal(response.status, 200);
-  const payload = await response.json();
-  assert.equal(payload.user.id, "user_demo");
-  assert.ok(payload.memos.every(item => item.scope !== "personal" || item.ownerId === "user_demo"));
-  assert.ok(Array.isArray(payload.pageGroups));
-  assert.ok(payload.memos.every(item => item.rule.pageScope === "global" || item.rule.sitePatterns.length > 0));
+  assert.equal(response.status, 401);
 });
 
-test("个人备忘 CRUD 与匿名事件可持久化", async t => {
+test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持久化", async t => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "context-companion-test-"));
   const dataFile = path.join(tempDir, "db.json");
   fs.copyFileSync(path.join(__dirname, "..", "data", "db.json"), dataFile);
   const baselineTriggered = JSON.parse(fs.readFileSync(dataFile, "utf8")).events.filter(event => event.action === "triggered").length;
+  const vapidKeys = webPush.generateVAPIDKeys();
+  const adminPhone = "13000000000";
+  const adminPassword = "test-only-password";
   const port = await new Promise((resolve, reject) => {
     const probe = net.createServer();
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", () => { const value = probe.address().port; probe.close(() => resolve(value)); });
   });
   const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, PORT: String(port), CONTEXT_COMPANION_DATA: dataFile },
+    env: { ...process.env, PORT: String(port), CONTEXT_COMPANION_DATA: dataFile, VAPID_PUBLIC_KEY: vapidKeys.publicKey, VAPID_PRIVATE_KEY: vapidKeys.privateKey, VAPID_SUBJECT: "mailto:test@example.com", ADMIN_PHONE: adminPhone, ADMIN_PASSWORD_HASH: testPasswordHash(adminPassword), ADMIN_SESSION_SECRET: randomBytes(32).toString("base64url") },
     stdio: "ignore"
   });
   t.after(() => { child.kill(); fs.rmSync(tempDir, { recursive: true, force: true }); });
@@ -97,25 +243,249 @@ test("个人备忘 CRUD 与匿名事件可持久化", async t => {
     try { if ((await fetch(`${base}/api/health`)).ok) break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  const pageGroupResponse = await fetch(`${base}/api/admin/page-groups`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "测试页面组", sitePatterns: ["https://scope.example/*"] }) });
+  const loginResponse = await fetch(`${base}/api/admin/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: adminPhone, password: adminPassword }) });
+  assert.equal(loginResponse.status, 200);
+  const adminCookie = loginResponse.headers.get("set-cookie").split(";")[0];
+  const adminFetch = (pathname, options = {}) => fetch(`${base}${pathname}`, { ...options, headers: { ...(options.headers || {}), Cookie: adminCookie } });
+  const invitationResponse = await adminFetch("/api/admin/invitations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "user_demo", validMinutes: 60 }) });
+  assert.equal(invitationResponse.status, 201);
+  const invitation = await invitationResponse.json();
+  const bindingResponse = await fetch(`${base}/api/device-bindings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inviteCode: invitation.code, deviceId: "test-device", browser: "test", extensionVersion: "3.0.0" }) });
+  assert.equal(bindingResponse.status, 201);
+  const binding = await bindingResponse.json();
+  const memberFetch = (pathname, options = {}) => fetch(`${base}${pathname}`, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${binding.token}` } });
+  const firstMemberSession = await memberFetch("/api/device/session");
+  const secondMemberSession = await memberFetch("/api/device/session");
+  assert.equal(firstMemberSession.status, 200);
+  assert.equal(secondMemberSession.status, 200);
+  const supplierResponse = await adminFetch("/api/admin/suppliers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName: "自动匹配供应商", customerId: "SUP-001", matchTerms: ["自动匹配供应商", "SUP-001"], contact: {}, metrics: {}, advantageProducts: [], evaluations: {}, source: { type: "manual" } }) });
+  assert.equal(supplierResponse.status, 201);
+  const supplier = await supplierResponse.json();
+  const bootstrapWithSupplier = await (await memberFetch("/api/bootstrap")).json();
+  const supplierTrigger = bootstrapWithSupplier.memos.find(item => item.sourceSupplierId === supplier.id);
+  assert.ok(supplierTrigger);
+  assert.deepEqual(supplierTrigger.rule.includeTerms, ["自动匹配供应商", "SUP-001"]);
+  assert.equal(supplierTrigger.rule.operator, "OR");
+  assert.equal(supplierTrigger.entityRefs[0].id, supplier.id);
+  assert.equal((await memberFetch(`/api/suppliers/${supplier.id}`)).status, 200);
+  const managedInvitationResponse = await adminFetch("/api/admin/invitations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "user_demo", validMinutes: 60 }) });
+  const managedInvitation = await managedInvitationResponse.json();
+  const invitationState = await (await adminFetch("/api/admin/state")).json();
+  const visibleInvitation = invitationState.invitations.find(item => item.id === managedInvitation.id);
+  assert.equal(visibleInvitation.code, managedInvitation.code);
+  assert.equal(Object.hasOwn(visibleInvitation, "codeHash"), false);
+  assert.equal(Object.hasOwn(visibleInvitation, "codeCipher"), false);
+  assert.equal((await adminFetch(`/api/admin/invitations/${managedInvitation.id}`, { method: "DELETE" })).status, 200);
+  assert.equal((await (await adminFetch("/api/admin/state")).json()).invitations.some(item => item.id === managedInvitation.id), false);
+  const versionResponse = await fetch(`${base}/api/version`);
+  assert.equal(versionResponse.status, 200);
+  assert.equal((await versionResponse.json()).checkIntervalMinutes, 60);
+  const versionEtag = versionResponse.headers.get("etag");
+  assert.ok(versionEtag);
+  assert.equal((await fetch(`${base}/api/version`, { headers: { "If-None-Match": versionEtag } })).status, 304);
+  const pushConfig = await (await fetch(`${base}/api/push/config`)).json();
+  assert.equal(pushConfig.enabled, true);
+  assert.equal(pushConfig.checkIntervalMinutes, 60);
+  const pageGroupResponse = await adminFetch(`/api/admin/page-groups`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    name: "测试页面组",
+    sitePatterns: ["https://scope.example/*"],
+    strategy: { matchScope: "row", selector: ".quote-row", excludeSelector: ".summary-row" }
+  }) });
   assert.equal(pageGroupResponse.status, 201);
   const pageGroup = await pageGroupResponse.json();
-  const scopedMemoResponse = await fetch(`${base}/api/admin/memos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "页面组提醒", body: "测试", rule: { pageScope: "page_groups", pageGroupIds: [pageGroup.id], includeTerms: ["测试"] } }) });
+  const secondPageGroupResponse = await adminFetch(`/api/admin/page-groups`, { method: "POST", headers: { "Content-Type": "application/json", "X-User-Id": "admin_demo" }, body: JSON.stringify({
+    id: pageGroup.id,
+    name: "新增页面组",
+    sitePatterns: ["https://second.example/*"],
+    strategy: { matchScope: "page" }
+  }) });
+  assert.equal(secondPageGroupResponse.status, 201);
+  const secondPageGroup = await secondPageGroupResponse.json();
+  assert.notEqual(secondPageGroup.id, pageGroup.id);
+  const pageGroupsAfterAppend = (await (await adminFetch(`/api/admin/state`)).json()).pageGroups;
+  assert.ok(pageGroupsAfterAppend.some(item => item.id === pageGroup.id && item.name === "测试页面组"));
+  assert.ok(pageGroupsAfterAppend.some(item => item.id === secondPageGroup.id && item.name === "新增页面组"));
+  const scopedMemoResponse = await adminFetch(`/api/admin/memos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "页面组提醒", body: "测试", rule: { pageScope: "page_groups", pageGroupIds: [pageGroup.id], includeTerms: ["测试"] } }) });
   assert.equal(scopedMemoResponse.status, 201);
   const scopedMemo = await scopedMemoResponse.json();
-  const scopedBootstrap = await (await fetch(`${base}/api/bootstrap?userId=user_demo`)).json();
+  const deniedSessionResponse = await fetch(`${base}/api/admin/annotation-sessions`, { method: "POST", headers: { "Content-Type": "application/json", "X-User-Id": "user_demo" }, body: JSON.stringify({ memoId: scopedMemo.id, pageGroupId: pageGroup.id, url: "https://scope.example/inquiry/1" }) });
+  assert.equal(deniedSessionResponse.status, 401);
+  const mismatchedSessionResponse = await adminFetch(`/api/admin/annotation-sessions`, { method: "POST", headers: { "Content-Type": "application/json", "X-User-Id": "admin_demo" }, body: JSON.stringify({ memoId: scopedMemo.id, pageGroupId: pageGroup.id, url: "https://outside.example/inquiry/1" }) });
+  assert.equal(mismatchedSessionResponse.status, 400);
+  const sessionResponse = await adminFetch(`/api/admin/annotation-sessions`, { method: "POST", headers: { "Content-Type": "application/json", "X-User-Id": "admin_demo" }, body: JSON.stringify({ memoId: scopedMemo.id, pageGroupId: pageGroup.id, url: "https://scope.example/inquiry/1" }) });
+  assert.equal(sessionResponse.status, 201);
+  const session = await sessionResponse.json();
+  assert.match(session.code, /^\d{6}$/);
+  const publicSessionResponse = await fetch(`${base}/api/annotation-sessions/${session.code}`);
+  assert.equal(publicSessionResponse.status, 200);
+  const publicSession = await publicSessionResponse.json();
+  assert.equal(publicSession.code, undefined);
+  assert.equal(publicSession.memo.id, scopedMemo.id);
+  const anchorPayload = { label: "报价按钮", pathPattern: "/inquiry/*", primarySelector: ".quote-button", fallbackSelector: "button", fingerprintHash: "b".repeat(64), relativeToMatchUnit: true };
+  const completeSessionResponse = await fetch(`${base}/api/admin/annotation-sessions/${session.id}/complete`, { method: "POST", headers: { "Content-Type": "application/json", "X-User-Id": "user_demo" }, body: JSON.stringify({ code: session.code, anchor: anchorPayload }) });
+  assert.equal(completeSessionResponse.status, 201);
+  const completed = await completeSessionResponse.json();
+  assert.equal(completed.anchor.pageGroupId, pageGroup.id);
+  assert.equal(completed.anchor.relativeToMatchUnit, true);
+  assert.equal(Object.hasOwn(completed.anchor, "text"), false);
+  const replayResponse = await fetch(`${base}/api/admin/annotation-sessions/${session.id}/complete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: session.code, anchor: anchorPayload }) });
+  assert.equal(replayResponse.status, 409);
+  const secondMemoResponse = await adminFetch(`/api/admin/memos`, { method: "POST", headers: { "Content-Type": "application/json", "X-User-Id": "admin_demo" }, body: JSON.stringify({ id: scopedMemo.id, title: "新增知识规则", body: "第二条", rule: { pageScope: "global", includeTerms: ["新增"] } }) });
+  assert.equal(secondMemoResponse.status, 201);
+  const secondMemo = await secondMemoResponse.json();
+  assert.notEqual(secondMemo.id, scopedMemo.id);
+  const firstToolResponse = await adminFetch(`/api/admin/tools`, { method: "POST", headers: { "Content-Type": "application/json", "X-User-Id": "admin_demo" }, body: JSON.stringify({ title: "新增工具一", category: "测试", url: "https://tool-one.example/" }) });
+  const firstTool = await firstToolResponse.clone().json();
+  const secondToolResponse = await adminFetch(`/api/admin/tools`, { method: "POST", headers: { "Content-Type": "application/json", "X-User-Id": "admin_demo" }, body: JSON.stringify({ id: firstTool.id, title: "新增工具二", category: "测试", url: "https://tool-two.example/" }) });
+  assert.equal(firstToolResponse.status, 201);
+  assert.equal(secondToolResponse.status, 201);
+  assert.notEqual(firstTool.id, (await secondToolResponse.json()).id);
+  const pushResponse = await adminFetch(`/api/admin/push`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ memoId: scopedMemo.id, type: "sync" }) });
+  assert.equal(pushResponse.status, 201);
+  const pushDelivery = await pushResponse.json();
+  assert.equal(pushDelivery.configured, true);
+  assert.equal(pushDelivery.targetCount, 0);
+  const subscriptionResponse = await memberFetch(`/api/push/subscribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId: "user_demo",
+      deviceId: "test-device",
+      browser: "test",
+      extensionVersion: "1.9.0",
+      subscription: { endpoint: "https://push.example.invalid/device", keys: { p256dh: "test-p256dh", auth: "test-auth" } }
+    })
+  });
+  assert.equal(subscriptionResponse.status, 201);
+  const scopedBootstrap = await (await memberFetch(`/api/bootstrap`)).json();
   assert.deepEqual(scopedBootstrap.memos.find(item => item.id === scopedMemo.id).rule.sitePatterns, ["https://scope.example/*"]);
-  const usedDeleteResponse = await fetch(`${base}/api/admin/page-groups/${pageGroup.id}`, { method: "DELETE" });
+  assert.equal(scopedBootstrap.memos.find(item => item.id === scopedMemo.id).rule.pageStrategies[0].matchScope, "row");
+  const startTestResponse = await adminFetch(`/api/admin/page-groups/${pageGroup.id}/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://scope.example/inquiry/1", keywords: ["CAS", "待报价"] })
+  });
+  assert.equal(startTestResponse.status, 201);
+  const startedTest = await startTestResponse.json();
+  const pendingTests = await (await fetch(`${base}/api/strategy-tests/pending`)).json();
+  assert.ok(pendingTests.tests.some(item => item.request.id === startedTest.request.id && item.strategy.matchScope === "row"));
+  const reportTestResponse = await fetch(`${base}/api/strategy-tests/${startedTest.request.id}/result`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url: "https://scope.example/inquiry/1",
+      matchScope: "row",
+      selectorValid: true,
+      unitCount: 3,
+      matchedUnitCount: 1,
+      matchedTerms: ["CAS", "待报价"],
+      missingTerms: []
+    })
+  });
+  assert.equal(reportTestResponse.status, 201);
+  const reportedTest = await reportTestResponse.json();
+  assert.equal(reportedTest.matchedUnitCount, 1);
+  const completedTests = await (await fetch(`${base}/api/strategy-tests/pending`)).json();
+  assert.equal(completedTests.tests.some(item => item.request.id === startedTest.request.id), false);
+  const usedDeleteResponse = await adminFetch(`/api/admin/page-groups/${pageGroup.id}`, { method: "DELETE" });
   assert.equal(usedDeleteResponse.status, 409);
-  const createdResponse = await fetch(`${base}/api/personal-memos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerId: "user_demo", title: "临时备忘", body: "测试正文", rule: { includeTerms: ["测试"] } }) });
+  const createdResponse = await memberFetch(`/api/personal-memos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerId: "admin_demo", deviceId: "forged-device", title: "临时备忘", body: "测试正文", rule: { includeTerms: ["测试"] } }) });
   assert.equal(createdResponse.status, 201);
   const created = await createdResponse.json();
-  const updatedResponse = await fetch(`${base}/api/personal-memos/${created.id}?userId=user_demo`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "已更新备忘", body: "测试正文", rule: { includeTerms: ["测试"] } }) });
+  assert.equal(created.ownerId, "user_demo");
+  const updatedResponse = await memberFetch(`/api/personal-memos/${created.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "已更新备忘", body: "测试正文", rule: { includeTerms: ["测试"] } }) });
   assert.equal(updatedResponse.status, 200);
   assert.equal((await updatedResponse.json()).title, "已更新备忘");
-  const eventResponse = await fetch(`${base}/api/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "user_demo", memoId: created.id, domain: "example.com", action: "triggered" }) });
+  const organizationCommentResponse = await memberFetch(`/api/memos/${secondMemo.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "组织知识评论" }) });
+  const personalCommentResponse = await memberFetch(`/api/memos/${created.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "个人知识评论" }) });
+  assert.equal(organizationCommentResponse.status, 201);
+  assert.equal(personalCommentResponse.status, 201);
+  const personalComment = await personalCommentResponse.json();
+  assert.equal(personalComment.userId, "user_demo");
+  assert.equal(personalComment.canDelete, true);
+  const personalComments = await (await memberFetch(`/api/memos/${created.id}/comments`)).json();
+  assert.equal(personalComments.comments[0].content, "个人知识评论");
+  assert.equal((await memberFetch(`/api/memo-comments/${personalComment.id}`, { method: "DELETE" })).status, 200);
+  const eventResponse = await memberFetch(`/api/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "admin_demo", memoId: created.id, domain: "example.com", action: "triggered" }) });
   assert.equal(eventResponse.status, 201);
-  const adminState = await (await fetch(`${base}/api/admin/state`)).json();
+  const feedbackResponse = await memberFetch(`/api/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "admin_demo", deviceId: "forged-device", memoId: secondMemo.id, domain: "feedback.example.com", action: "helpful", presentation: "sidepanel" }) });
+  assert.equal(feedbackResponse.status, 201);
+  const operationResponse = await adminFetch("/api/admin/memos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    type: "operation",
+    title: "每日确认询单",
+    body: "今日确认一次",
+    startsAt: "2026-01-01T00:00:00.000Z",
+    expiresAt: "2099-12-31T00:00:00.000Z",
+    targetUserIds: ["user_demo"],
+    rule: { includeTerms: ["询单"] }
+  }) });
+  assert.equal(operationResponse.status, 201);
+  const operation = await operationResponse.json();
+  const operationCommentResponse = await memberFetch(`/api/memos/${operation.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "组织操作评论" }) });
+  assert.equal(operationCommentResponse.status, 201);
+  const firstReceiptResponse = await memberFetch("/api/operation-receipts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ memoId: operation.id }) });
+  const secondReceiptResponse = await memberFetch("/api/operation-receipts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ memoId: operation.id }) });
+  assert.equal(firstReceiptResponse.status, 201);
+  assert.equal(secondReceiptResponse.status, 200);
+  assert.equal((await firstReceiptResponse.json()).id, (await secondReceiptResponse.json()).id);
+
+  const alarmResponse = await memberFetch("/api/personal-alarms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    title: "每天回访",
+    body: "联系客户",
+    links: [{ label: "客户页", url: "https://example.com/customer" }],
+    schedule: { mode: "daily", timeOfDay: "09:00", timezone: "Asia/Shanghai" }
+  }) });
+  assert.equal(alarmResponse.status, 410);
+
+  const bootstrapAfterV21 = await (await memberFetch("/api/bootstrap")).json();
+  assert.ok(bootstrapAfterV21.memos.some(item => item.id === operation.id && item.type === "operation"));
+  assert.equal(bootstrapAfterV21.memos.find(item => item.id === secondMemo.id).commentCount, 1);
+  assert.equal(Object.hasOwn(bootstrapAfterV21, "memoComments"), false);
+  assert.ok(bootstrapAfterV21.operationReceipts.some(item => item.memoId === operation.id));
+  assert.equal(Object.hasOwn(bootstrapAfterV21, "personalAlarms"), false);
+  const adminState = await (await adminFetch(`/api/admin/state`)).json();
   assert.equal(adminState.stats.triggered, baselineTriggered + 1);
   assert.ok(adminState.memos.some(item => item.id === created.id && item.version === 2));
+  assert.equal(adminState.pushStats.checkIntervalMinutes, 60);
+  assert.equal(adminState.pushStats.activeSubscriptions, 1);
+  assert.equal(Object.hasOwn(adminState, "pushSubscriptions"), false);
+  assert.equal(adminState.pushDeliveries.at(-1).id, pushDelivery.id);
+  assert.ok(adminState.pageGroups.some(item => item.id === pageGroup.id));
+  assert.ok(adminState.pageGroups.some(item => item.id === secondPageGroup.id));
+  assert.ok(adminState.memos.some(item => item.id === scopedMemo.id));
+  assert.ok(adminState.memos.some(item => item.id === secondMemo.id && item.createdBy === "admin_demo"));
+  assert.ok(adminState.tools.some(item => item.title === "COA生成器"));
+  assert.ok(adminState.tools.some(item => item.title === "新增工具一"));
+  assert.ok(adminState.tools.some(item => item.title === "新增工具二"));
+  const secondMemoActivity = adminState.memoActivity.find(item => item.memoId === secondMemo.id);
+  assert.equal(secondMemoActivity.comments[0].content, "组织知识评论");
+  assert.equal(secondMemoActivity.stats.helpful, 1);
+  assert.equal(secondMemoActivity.recentFeedback[0].userId, "user_demo");
+  assert.equal(secondMemoActivity.recentFeedback[0].deviceId, "test-device");
+  assert.equal(secondMemoActivity.recentFeedback[0].domain, "feedback.example.com");
+  assert.equal(adminState.memoActivity.find(item => item.memoId === created.id).createdFromDeviceId, "test-device");
+  assert.equal(Object.hasOwn(adminState, "personalAlarms"), false);
+  assert.ok(adminState.operationReceipts.some(item => item.memoId === operation.id));
+  assert.equal(adminState.accountEvents.filter(item => item.userId === "user_demo" && item.type === "member_login").length, 1);
+  assert.ok(adminState.accountEvents.some(item => item.userId === "user_demo" && item.type === "device_bound"));
+  assert.ok(adminState.deviceBindings.find(item => item.userId === "user_demo").lastLoginAt);
+  assert.equal(Object.hasOwn(adminState.deviceBindings[0], "tokenHash"), false);
+  assert.ok(adminState.auditLog.some(item => item.action === "created" && item.entityId === secondMemo.id && item.userId === "admin_demo"));
+  const deletableMemoResponse = await adminFetch("/api/admin/memos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    title: "待删除组织提醒",
+    body: "删除后不应保留 archived 实体",
+    targetUserIds: ["missing_user"],
+    rule: { includeTerms: ["删除测试"] }
+  }) });
+  assert.equal(deletableMemoResponse.status, 201);
+  const deletableMemo = await deletableMemoResponse.json();
+  const deleteOrganizationMemoResponse = await adminFetch(`/api/admin/memos/${deletableMemo.id}`, { method: "DELETE" });
+  assert.equal(deleteOrganizationMemoResponse.status, 200);
+  const deleteOrganizationMemoResult = await deleteOrganizationMemoResponse.json();
+  assert.deepEqual(deleteOrganizationMemoResult, { ok: true, deletedId: deletableMemo.id, sync: { targetCount: 0, acceptedCount: 0 } });
+  const stateAfterOrganizationDelete = await (await adminFetch("/api/admin/state")).json();
+  assert.equal(stateAfterOrganizationDelete.memos.some(item => item.id === deletableMemo.id), false);
+  assert.ok(stateAfterOrganizationDelete.auditLog.some(item => item.action === "deleted" && item.entityId === deletableMemo.id));
+  assert.equal((await (await memberFetch("/api/bootstrap")).json()).memos.some(item => item.id === deletableMemo.id), false);
+  assert.ok(fs.readdirSync(path.join(tempDir, "backups")).length > 0);
 });

@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>页知｜供应商卡片 V3.1 Demo</title>
+  <style>
+    :root {
+      --navy-950: #071d2c;
+      --navy-900: #0e293a;
+      --navy-800: #173a4d;
+      --slate-700: #3d5868;
+      --slate-600: #58707e;
+      --slate-500: #718692;
+      --line: rgba(97, 131, 149, .20);
+      --line-light: rgba(255, 255, 255, .72);
+      --glass: rgba(248, 252, 253, .76);
+      --glass-soft: rgba(255, 255, 255, .52);
+      --blue: #0875b4;
+      --blue-dark: #075e91;
+      --teal: #0b827b;
+      --teal-soft: #dff4ef;
+      --amber: #b47211;
+      --amber-soft: #fff4d9;
+      --shadow: 0 30px 90px rgba(7, 33, 51, .28), 0 8px 24px rgba(20, 61, 81, .12), inset 0 1px 0 rgba(255, 255, 255, .92);
+      --radius-lg: 24px;
+      --radius-md: 15px;
+      --ease: cubic-bezier(.22, .8, .22, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      color: var(--navy-950);
+      background:
+        linear-gradient(180deg, rgba(221, 237, 241, .62), rgba(234, 243, 241, .76)),
+        url("../admin/assets/lake-muted.webp") center / cover fixed no-repeat;
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, [tabindex]:focus-visible {
+      outline: 3px solid rgba(8, 117, 180, .28);
+      outline-offset: 2px;
+    }
+
+    .demo-shell { width: min(1220px, calc(100% - 32px)); margin: 24px auto 40px; }
+    .demo-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
+    .eyebrow { margin: 0 0 6px; color: var(--blue-dark); font-size: 12px; font-weight: 760; letter-spacing: .08em; }
+    h1 { margin: 0; font-size: clamp(25px, 3vw, 36px); line-height: 1.15; letter-spacing: -.035em; }
+    .intro { max-width: 470px; margin: 0; color: var(--slate-600); font-size: 12px; text-align: right; }
+
+    .browser {
+      position: relative;
+      min-height: 780px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, .68);
+      border-radius: 26px;
+      background: rgba(246, 250, 251, .56);
+      box-shadow: 0 28px 80px rgba(15, 47, 63, .17), inset 0 1px 0 #fff;
+      -webkit-backdrop-filter: blur(18px) saturate(124%);
+      backdrop-filter: blur(18px) saturate(124%);
+    }
+    .browser-bar { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 15px; border-bottom: 1px solid var(--line); background: rgba(238, 245, 247, .74); }
+    .traffic { display: flex; gap: 6px; }
+    .traffic i { width: 9px; height: 9px; border-radius: 50%; background: #aabac2; }
+    .address { flex: 1; max-width: 620px; padding: 6px 12px; overflow: hidden; border: 1px solid rgba(111, 142, 157, .16); border-radius: 8px; color: var(--slate-500); background: rgba(255, 255, 255, .68); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .mode { margin-left: auto; color: var(--teal); font-size: 11px; font-weight: 700; }
+    .admin-frame { display: grid; grid-template-columns: 150px 1fr; min-height: 734px; }
+    .admin-nav { padding: 20px 14px; color: rgba(239, 248, 251, .72); background: rgba(6, 29, 45, .91); }
+    .admin-brand { padding: 0 8px 18px; color: #fff; font-weight: 780; }
+    .admin-brand small { display: block; margin-top: 3px; color: rgba(207, 226, 235, .64); font-size: 9px; font-weight: 500; }
+    .nav-item { display: block; margin: 4px 0; padding: 10px 10px; border-radius: 9px; color: inherit; font-size: 11px; }
+    .nav-item.active { color: #fff; background: rgba(255, 255, 255, .12); font-weight: 700; }
+    .admin-main { min-width: 0; padding: 22px 26px; background: rgba(250, 252, 252, .6); }
+    .admin-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .admin-title h2 { margin: 0; font-size: 19px; }
+    .admin-title span { color: var(--slate-500); font-size: 11px; }
+    .search-row { display: grid; grid-template-columns: 170px minmax(180px, 1fr) 112px; gap: 8px; margin-top: 17px; }
+    .search-row input { height: 38px; padding: 0 12px; border: 1px solid rgba(99, 130, 146, .24); border-radius: 9px; color: var(--navy-900); background: rgba(255, 255, 255, .76); }
+    .search-row button { border: 0; border-radius: 9px; color: #fff; background: var(--blue); font-size: 12px; font-weight: 700; }
+    .table { margin-top: 14px; overflow: hidden; border: 1px solid rgba(104, 135, 151, .17); border-radius: 12px; background: rgba(255, 255, 255, .55); }
+    .tr { display: grid; grid-template-columns: 1.25fr .8fr .75fr .7fr 74px; align-items: center; min-height: 50px; border-top: 1px solid rgba(104, 135, 151, .13); }
+    .tr:first-child { border-top: 0; }
+    .tr.header { min-height: 39px; color: var(--slate-500); background: rgba(230, 239, 242, .55); font-size: 10px; font-weight: 700; }
+    .td { min-width: 0; padding: 9px 12px; overflow: hidden; color: var(--slate-700); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .supplier-trigger {
+      min-height: 34px;
+      padding: 4px 8px;
+      border: 0;
+      border-bottom: 2px solid var(--teal);
+      border-radius: 6px 6px 3px 3px;
+      color: var(--navy-900);
+      background: rgba(191, 235, 226, .72);
+      font-weight: 760;
+      text-align: left;
+    }
+    .supplier-trigger:hover { background: rgba(171, 226, 215, .86); }
+    .tag { display: inline-flex; align-items: center; padding: 3px 7px; border-radius: 999px; color: var(--teal); background: var(--teal-soft); font-size: 9px; font-weight: 760; }
+    .placeholder { display: inline-block; width: 78%; height: 8px; border-radius: 99px; background: rgba(110, 139, 153, .12); }
+
+    .scrim {
+      position: absolute;
+      z-index: 20;
+      inset: 46px 0 0;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      background: rgba(7, 27, 42, .38);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity .18s ease, visibility .18s ease;
+    }
+    .scrim.open { opacity: 1; visibility: visible; }
+
+    .supplier-card {
+      width: min(410px, 100%);
+      min-width: 0;
+      max-width: calc(100vw - 28px);
+      max-height: min(515px, calc(100vh - 54px));
+      overflow: auto;
+      border: 1px solid var(--line-light);
+      border-radius: var(--radius-lg);
+      color: var(--navy-950);
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, .88), rgba(241, 248, 249, .71)),
+        rgba(248, 252, 253, .78);
+      box-shadow: var(--shadow);
+      -webkit-backdrop-filter: blur(28px) saturate(148%);
+      backdrop-filter: blur(28px) saturate(148%);
+      opacity: 0;
+      transform: translateY(12px) scale(.98);
+      transition: transform .22s var(--ease), opacity .18s ease;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(84, 121, 139, .28) transparent;
+    }
+    .scrim.open .supplier-card { opacity: 1; transform: translateY(0) scale(1); }
+    .card-accent { height: 5px; background: linear-gradient(90deg, var(--teal), #2ca99b 58%, #8fd8cc); }
+    .supplier-head { display: flex; align-items: flex-start; gap: 9px; padding: 10px 11px 9px 12px; }
+    .company-mark { display: grid; flex: 0 0 auto; place-items: center; width: 38px; height: 38px; border: 1px solid rgba(255, 255, 255, .82); border-radius: 12px; color: #fff; background: linear-gradient(145deg, #0c8a82, #086e80); box-shadow: 0 9px 20px rgba(8, 110, 128, .22), inset 0 1px 0 rgba(255, 255, 255, .28); }
+    .company-mark svg { width: 20px; height: 20px; }
+    .company-heading { min-width: 0; flex: 1; }
+    .kind { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; color: var(--teal); font-size: 10px; font-weight: 780; letter-spacing: .04em; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #18a171; box-shadow: 0 0 0 4px rgba(24, 161, 113, .10); }
+    .company-heading h2 { margin: 0; overflow: hidden; font-size: 16px; line-height: 1.22; letter-spacing: -.018em; text-overflow: ellipsis; white-space: nowrap; }
+    .company-copy { display: inline-flex; max-width: 100%; align-items: center; gap: 5px; padding: 0; overflow: hidden; border: 0; color: inherit; background: transparent; font: inherit; font-weight: inherit; text-align: left; }
+    .company-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .company-copy svg, .customer-id svg { flex: 0 0 auto; width: 12px; height: 12px; color: var(--teal); opacity: .72; }
+    .company-copy:hover span { color: var(--blue-dark); text-decoration: underline; text-underline-offset: 3px; }
+    .company-meta { display: flex; align-items: center; gap: 7px; margin-top: 4px; overflow: hidden; }
+    .customer-id { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; min-height: 24px; padding: 2px 7px; border: 1px solid rgba(11, 130, 123, .16); border-radius: 7px; color: var(--teal); background: rgba(223, 244, 239, .55); font-size: 9px; }
+    .customer-id b { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .customer-id:hover { background: rgba(210, 239, 232, .9); }
+    .updated { overflow: hidden; margin: 0; color: var(--slate-500); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .icon-button { display: grid; flex: 0 0 auto; place-items: center; width: 44px; height: 44px; border: 1px solid rgba(95, 127, 144, .18); border-radius: 12px; color: var(--slate-600); background: rgba(255, 255, 255, .48); }
+    .icon-button:hover { color: var(--navy-900); background: rgba(255, 255, 255, .78); }
+    .icon-button svg { width: 18px; height: 18px; }
+
+    .section { padding: 8px 12px; border-top: 1px solid var(--line); }
+    .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+    .section-title h3 { margin: 0; color: var(--slate-700); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+    .section-title span { color: var(--slate-500); font-size: 9px; }
+
+    .contact-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+    .contact-name { margin: 0 0 3px; font-size: 14px; font-weight: 780; }
+    .contact-name span { margin-left: 7px; color: var(--slate-600); font-size: 11px; font-weight: 560; }
+    .contact-value { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--slate-600); font-size: 11px; }
+    .contact-value span { display: inline-flex; align-items: center; gap: 5px; }
+    .contact-value svg { width: 13px; height: 13px; color: var(--teal); }
+    .copy-button { min-width: 66px; min-height: 38px; padding: 0 12px; border: 1px solid rgba(11, 130, 123, .19); border-radius: 11px; color: var(--teal); background: rgba(223, 244, 239, .64); font-size: 10px; font-weight: 760; }
+    .copy-button:hover { background: rgba(210, 239, 232, .9); }
+
+    .metric-primary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .metric-big { padding: 6px 8px; border: 1px solid rgba(255, 255, 255, .76); border-radius: 10px; background: rgba(255, 255, 255, .48); box-shadow: inset 0 1px 0 #fff; text-align: center; }
+    .metric-big strong { display: block; color: var(--teal); font-size: 19px; line-height: 1.15; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+    .metric-big span { color: var(--slate-600); font-size: 9px; }
+    .metric-rates { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 6px; overflow: hidden; border: 1px solid rgba(101, 134, 150, .15); border-radius: 10px; background: rgba(232, 242, 244, .45); }
+    .metric-rate { padding: 6px 7px; border-left: 1px solid rgba(101, 134, 150, .14); text-align: center; }
+    .metric-rate:first-child { border-left: 0; }
+    .metric-rate strong { display: block; margin-bottom: 1px; color: var(--blue-dark); font-size: 14px; font-variant-numeric: tabular-nums; }
+    .metric-rate span { color: var(--slate-500); font-size: 9px; }
+
+    .product-list { overflow: hidden; border: 1px solid rgba(11, 130, 123, .14); border-radius: 11px; background: rgba(246, 251, 251, .48); }
+    .product-row { display: grid; grid-template-columns: 1.15fr .9fr .72fr; align-items: center; min-height: 26px; border-top: 1px solid rgba(101, 134, 150, .12); text-align: center; }
+    .product-row:first-child { border-top: 0; }
+    .product-row.header { min-height: 23px; color: var(--slate-500); background: rgba(225, 241, 239, .5); font-size: 9px; font-weight: 760; }
+    .product-cell { min-width: 0; padding: 5px 7px; overflow: hidden; border-left: 1px solid rgba(101, 134, 150, .1); color: var(--slate-700); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .product-cell:first-child { border-left: 0; color: #17645f; font-weight: 760; }
+    .product-row:not(.header) .product-cell:last-child { color: var(--blue-dark); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+    .evaluation-list { display: grid; gap: 7px; }
+    .evaluation { padding: 8px 9px; border: 1px solid rgba(102, 133, 149, .14); border-radius: 11px; background: rgba(255, 255, 255, .37); }
+    .evaluation.hidden { display: none; }
+    .evaluation-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+    .eval-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--teal); font-size: 9px; font-weight: 800; }
+    .eval-kind.long { color: var(--amber); }
+    .eval-kind i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .eval-meta { color: var(--slate-500); font-size: 9px; }
+    .evaluation p { margin: 0; color: var(--slate-700); font-size: 11px; line-height: 1.6; }
+    .text-button { min-height: 36px; padding: 0 4px; border: 0; color: var(--blue-dark); background: transparent; font-size: 10px; font-weight: 750; }
+    .text-button:hover { text-decoration: underline; }
+
+    .supplier-footer { position: sticky; z-index: 2; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 6px 9px 6px 12px; border-top: 1px solid var(--line); background: rgba(247, 251, 252, .88); -webkit-backdrop-filter: blur(18px) saturate(135%); backdrop-filter: blur(18px) saturate(135%); box-shadow: 0 -8px 24px rgba(21, 55, 72, .06); }
+    .related { color: var(--slate-500); font-size: 10px; }
+    .related b { color: var(--navy-800); }
+    .footer-actions { display: flex; gap: 7px; }
+    .button { min-height: 40px; padding: 0 14px; border: 1px solid rgba(92, 124, 140, .2); border-radius: 12px; color: var(--slate-700); background: rgba(255, 255, 255, .55); font-size: 11px; font-weight: 750; }
+    .button.primary { border-color: var(--blue); color: #fff; background: var(--blue); box-shadow: 0 8px 18px rgba(8, 117, 180, .2); }
+    .button:hover { filter: brightness(.97); }
+
+    .toast { position: absolute; z-index: 30; right: 24px; bottom: 22px; padding: 10px 13px; border: 1px solid rgba(255, 255, 255, .24); border-radius: 11px; color: #fff; background: rgba(7, 35, 51, .9); box-shadow: 0 12px 32px rgba(4, 26, 40, .25); opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .18s ease, transform .18s var(--ease); }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .browser { background: #f3f7f8; }
+      .supplier-card { background: #f7fbfc; }
+    }
+    @media (max-width: 760px) {
+      .demo-shell { width: calc(100% - 16px); margin-top: 10px; }
+      .demo-head { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .intro { text-align: left; }
+      .browser { min-height: 710px; border-radius: 18px; }
+      .admin-frame { grid-template-columns: 1fr; }
+      .admin-nav { display: none; }
+      .admin-main { padding: 17px 12px; }
+      .search-row { grid-template-columns: 1fr 92px; }
+      .search-row input:nth-child(2) { display: none; }
+      .tr { grid-template-columns: 1.4fr .8fr .8fr; }
+      .td:nth-child(3), .td:nth-child(4) { display: none; }
+      .scrim { padding: 10px; }
+      .supplier-card { width: calc(100vw - 28px); max-width: calc(100vw - 28px); max-height: calc(100vh - 78px); border-radius: 19px; }
+      .supplier-head { padding-left: 14px; }
+      .section { padding-right: 14px; padding-left: 14px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="demo-shell">
+    <header class="demo-head">
+      <div>
+        <p class="eyebrow">PAGECUE · SUPPLIER PROFILE</p>
+        <h1>供应商卡片 V3.1</h1>
+      </div>
+      <p class="intro">模拟在公司后台点击供应商名称后的展示效果。本版只验证卡片结构、视觉密度和展开交互，数据均为演示内容。</p>
+    </header>
+
+    <section class="browser" aria-label="公司后台与供应商卡片演示">
+      <div class="browser-bar">
+        <span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div class="address">https://www.biochemsafebuy.com/admin/enquiryquotation</div>
+        <span class="mode">极速模式</span>
+      </div>
+
+      <div class="admin-frame">
+        <aside class="admin-nav" aria-label="后台菜单">
+          <div class="admin-brand">页知供应商资料<small>SUPPLIER PROFILE</small></div>
+          <span class="nav-item">系统管理首页</span>
+          <span class="nav-item active">询价报价管理</span>
+          <span class="nav-item">化学产品管理</span>
+          <span class="nav-item">订单管理</span>
+          <span class="nav-item">合同统计</span>
+          <span class="nav-item">公司员工管理</span>
+        </aside>
+
+        <section class="admin-main">
+          <div class="admin-title">
+            <h2>询价报价管理</h2>
+            <span>演示页面 · iframe 内容区</span>
+          </div>
+          <div class="search-row">
+            <input aria-label="CAS号" value="110-16-7">
+            <input aria-label="公司或联系人" value="湖北鑫鸣泰">
+            <button type="button">查询</button>
+          </div>
+          <div class="table" role="table" aria-label="询价报价列表">
+            <div class="tr header" role="row">
+              <div class="td">供应商</div><div class="td">产品</div><div class="td">CAS</div><div class="td">状态</div><div class="td">操作</div>
+            </div>
+            <div class="tr" role="row">
+              <div class="td"><button class="supplier-trigger" type="button" data-open>湖北鑫鸣泰化学有限公司</button></div>
+              <div class="td">顺丁烯二酸</div><div class="td">110-16-7</div><div class="td"><span class="tag">已报价</span></div><div class="td">查看</div>
+            </div>
+            <div class="tr" role="row">
+              <div class="td"><span class="placeholder"></span></div><div class="td">氯乙酸</div><div class="td">79-04-9</div><div class="td"><span class="tag">跟进中</span></div><div class="td">查看</div>
+            </div>
+            <div class="tr" role="row">
+              <div class="td"><span class="placeholder"></span></div><div class="td"><span class="placeholder"></span></div><div class="td">79-11-8</div><div class="td"><span class="placeholder"></span></div><div class="td">查看</div>
+            </div>
+            <div class="tr" role="row">
+              <div class="td"><span class="placeholder"></span></div><div class="td"><span class="placeholder"></span></div><div class="td">107-14-2</div><div class="td"><span class="tag">已成交</span></div><div class="td">查看</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="scrim open" id="supplier-dialog" role="dialog" aria-modal="true" aria-labelledby="supplier-title">
+        <article class="supplier-card">
+          <div class="card-accent"></div>
+          <header class="supplier-head">
+            <span class="company-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 21V8l8-4v17M12 10l8-3v14M7 10h2m-2 4h2m-2 4h2m6-5h2m-2 4h2M2 21h20"/></svg>
+            </span>
+            <div class="company-heading">
+              <div class="kind"><i class="status-dot"></i>供应商档案 · 合作中</div>
+              <h2><button class="company-copy" type="button" data-copy-value="湖北鑫鸣泰化学有限公司" data-copy-label="公司名称"><span id="supplier-title">湖北鑫鸣泰化学有限公司</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg></button></h2>
+              <div class="company-meta">
+                <button class="customer-id" type="button" data-copy-value="KH-20240718-0321" data-copy-label="客户ID"><span>客户ID</span><b>KH-20240718-0321</b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg></button>
+                <p class="updated">更新于 2026-07-20 14:30</p>
+              </div>
+            </div>
+            <button class="icon-button" type="button" aria-label="关闭供应商卡片" data-close>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button>
+          </header>
+
+          <section class="section">
+            <div class="section-title"><h3>基础信息</h3><span>主要联系人</span></div>
+            <div class="contact-row">
+              <div>
+                <p class="contact-name">李经理 <span>销售经理</span></p>
+                <div class="contact-value">
+                  <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z"/></svg>139 0000 5678</span>
+                  <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4zM4 7l8 6 8-6"/></svg>sales@example.com</span>
+                </div>
+              </div>
+              <button class="copy-button" type="button" data-copy-value="李经理｜销售经理｜139 0000 5678｜sales@example.com" data-copy-label="联系方式">复制</button>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-title"><h3>业务数据</h3><span>近12个月</span></div>
+            <div class="metric-primary">
+              <div class="metric-big"><strong>95%</strong><span>发布产品数分位</span></div>
+              <div class="metric-big"><strong>81%</strong><span>销售订单数分位</span></div>
+            </div>
+            <div class="metric-rates">
+              <div class="metric-rate"><strong>18.6%</strong><span>成交率</span></div>
+              <div class="metric-rate"><strong>67.4%</strong><span>报价率</span></div>
+              <div class="metric-rate"><strong>3.1%</strong><span>售后率</span></div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-title"><h3>优势产品</h3><span>近12个月</span></div>
+            <div class="product-list" role="table" aria-label="优势产品">
+              <div class="product-row header" role="row"><span class="product-cell">产品</span><span class="product-cell">CAS</span><span class="product-cell">成交率</span></div>
+              <div class="product-row" role="row"><span class="product-cell">氯乙酸</span><span class="product-cell">79-04-9</span><span class="product-cell">42.6%</span></div>
+              <div class="product-row" role="row"><span class="product-cell">顺丁烯二酸</span><span class="product-cell">110-16-7</span><span class="product-cell">35.8%</span></div>
+              <div class="product-row" role="row"><span class="product-cell">巯基乙酸</span><span class="product-cell">68-11-1</span><span class="product-cell">31.4%</span></div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-title"><h3>合作评价</h3><button class="text-button" type="button" aria-expanded="false" data-expand>展开全部</button></div>
+            <div class="evaluation-list">
+              <article class="evaluation">
+                <div class="evaluation-head"><span class="eval-kind"><i></i>短期评价</span><span class="eval-meta">陈昕 · 2026-07-18</span></div>
+                <p>近期报价响应较快，部分产品交期需要下单前再次确认。</p>
+              </article>
+              <article class="evaluation">
+                <div class="evaluation-head"><span class="eval-kind long"><i></i>长期评价</span><span class="eval-meta">王敏 · 2026-06-30</span></div>
+                <p>合作稳定，氯乙酸系列价格和供货经验具有优势，重大订单建议提前锁定排期。</p>
+              </article>
+              <article class="evaluation hidden" data-extra>
+                <div class="evaluation-head"><span class="eval-kind"><i></i>短期评价</span><span class="eval-meta">李晓 · 2026-07-12</span></div>
+                <p>样品寄送及时，技术资料完整度较好。</p>
+              </article>
+            </div>
+          </section>
+
+          <footer class="supplier-footer">
+            <span class="related">关联提醒 <b>3</b> 条</span>
+            <div class="footer-actions">
+              <button class="button" type="button" data-close>关闭</button>
+              <button class="button primary" type="button" data-toast="已打开关联提醒">查看关联提醒</button>
+            </div>
+          </footer>
+        </article>
+      </div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite">联系方式已复制</div>
+    </section>
+  </main>
+
+  <script>
+    const dialog = document.querySelector('#supplier-dialog');
+    const toast = document.querySelector('#toast');
+    const openDialog = () => {
+      dialog.classList.add('open');
+      document.querySelector('[data-close]')?.focus({ preventScroll: true });
+    };
+    const closeDialog = () => {
+      dialog.classList.remove('open');
+      document.querySelector('[data-open]')?.focus({ preventScroll: true });
+    };
+    const showToast = message => {
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200);
+    };
+
+    document.querySelector('[data-open]').addEventListener('click', openDialog);
+    document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', closeDialog));
+    document.querySelectorAll('[data-copy-value]').forEach(button => button.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(button.dataset.copyValue); }
+      catch {}
+      showToast(`${button.dataset.copyLabel}已复制`);
+    }));
+    document.querySelector('[data-expand]').addEventListener('click', event => {
+      const expanded = event.currentTarget.getAttribute('aria-expanded') === 'true';
+      event.currentTarget.setAttribute('aria-expanded', String(!expanded));
+      event.currentTarget.textContent = expanded ? '展开全部' : '收起';
+      document.querySelectorAll('[data-extra]').forEach(item => item.classList.toggle('hidden', expanded));
+    });
+    document.querySelector('[data-toast]').addEventListener('click', event => showToast(event.currentTarget.dataset.toast));
+    dialog.addEventListener('click', event => { if (event.target === dialog) closeDialog(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && dialog.classList.contains('open')) closeDialog(); });
+  </script>
+</body>
+</html>

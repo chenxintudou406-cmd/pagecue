@@ -41,3 +41,49 @@ test("相同关键词新增出现次数会产生不同触发签名", () => {
   assert.equal(first, "1:1");
   assert.equal(repeated, "2:2");
 });
+
+test("AND 关键词必须出现在同一个模块或同一行内", () => {
+  const rule = { includeTerms: ["CAS", "待报价"], excludeTerms: [], operator: "AND" };
+  const splitAcrossRows = engine.evaluateRuleUnits(rule, [
+    { text: "产品 A CAS 123-45-6" },
+    { text: "产品 B 待报价" }
+  ], { url: "https://example.com/inquiry" });
+  const sameRow = engine.evaluateRuleUnits(rule, [
+    { text: "产品 A CAS 123-45-6 待报价" },
+    { text: "产品 B 已完成" }
+  ], { url: "https://example.com/inquiry" });
+
+  assert.equal(splitAcrossRows.matched, false);
+  assert.equal(sameRow.matched, true);
+  assert.deepEqual(sameRow.matchedUnitIndexes, [0]);
+});
+
+test("页面组策略按网址解析，未配置时保持整页匹配", () => {
+  const scoped = engine.resolvePageStrategy({
+    pageStrategies: [
+      { sitePatterns: ["https://example.com/inquiry/*"], matchScope: "row", selector: ".quote-row" }
+    ]
+  }, "https://example.com/inquiry/123");
+  const fallback = engine.resolvePageStrategy({}, "https://example.com/other");
+
+  assert.equal(scoped.matchScope, "row");
+  assert.equal(scoped.selector, ".quote-row");
+  assert.equal(fallback.matchScope, "page");
+});
+
+test("1000 条知识规则中单页命中 100 条时保持轻量本地计算", () => {
+  const memos = Array.from({ length: 1000 }, (_, index) => ({
+    id: `memo_${index}`,
+    status: "published",
+    rule: {
+      sitePatterns: [index < 100 ? "https://crm.example.com/*" : "https://other.example.com/*"],
+      includeTerms: [index < 100 ? "询单" : `不存在-${index}`],
+      operator: "AND"
+    }
+  }));
+  const started = performance.now();
+  const matches = engine.evaluateMemos(memos, { url: "https://crm.example.com/inquiry/1", text: "客户询单需要报价" });
+  const elapsed = performance.now() - started;
+  assert.equal(matches.length, 100);
+  assert.ok(elapsed < 250, `1000 条规则本地计算耗时 ${elapsed.toFixed(1)}ms`);
+});

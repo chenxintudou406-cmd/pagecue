@@ -3,9 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>前衍提醒 PageCue 规则测试页</title>
+    <title>页知 PageCue 规则测试页</title>
     <style>
       *{box-sizing:border-box}body{margin:0;background:#f4f5ef;color:#172326;font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif}.shell{width:min(900px,calc(100% - 36px));margin:54px auto}.eyebrow{color:#0d766e;font-size:11px;letter-spacing:.15em;font-weight:800}h1{max-width:650px;margin:12px 0;font-size:44px;line-height:1.12;letter-spacing:-.05em}header p{max-width:620px;color:#677577;line-height:1.8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:35px}.card{padding:28px;border:1px solid #dce2db;border-radius:16px;background:white}.card:first-child{border-top:5px solid #d9f26a}.card h2{margin:0 0 10px;font-size:20px}.card p{color:#657477;line-height:1.7}.price{font-size:36px;font-weight:900;color:#0d766e}.button{display:inline-block;margin-top:12px;padding:10px 14px;border-radius:9px;background:#0d766e;color:white}#dynamic{min-height:80px}.hint{margin-top:25px;padding:15px;border-radius:10px;background:#102d32;color:#c6d5d3;font-size:12px}@media(max-width:650px){.grid{grid-template-columns:1fr}h1{font-size:34px}}
+      .row-demo{width:min(900px,calc(100% - 36px));margin:18px auto 54px;padding:24px;border:1px solid #dce2db;border-radius:16px;background:#fff}.row-demo h2{margin:0 0 8px;font-size:20px}.row-demo>p{margin:0 0 16px;color:#657477}.quote-list{display:grid;gap:8px}.quote-row{display:grid;grid-template-columns:1fr 1fr 110px;gap:12px;padding:12px 14px;border-radius:10px;background:#f4f7f5}.quote-row span:last-child{font-weight:800;color:#0d766e}.summary-row{background:#eef1eb;color:#677577}@media(max-width:650px){.quote-row{grid-template-columns:1fr}.quote-row span{display:block}}
     </style>
   </head>
   <body>
@@ -17,6 +18,15 @@
       </div>
       <div class="hint">预期结果：首次加载命中“报价”组织提醒和“客户”个人备忘；动态加入内容后，MutationObserver 会触发节流重扫，但冷却时间会阻止重复弹窗。</div>
     </div>
+    <section class="row-demo">
+      <h2>列表同一行策略测试</h2>
+      <p>使用选择器 <code>.quote-row</code>，关键词“CAS”和“待报价”只有在同一行出现时才会命中。</p>
+      <div class="quote-list">
+        <div class="quote-row"><span>产品 A</span><span>CAS 123-45-6</span><span>待报价</span></div>
+        <div class="quote-row"><span>产品 B</span><span>CAS 789-10-1</span><span>已完成</span></div>
+        <div class="quote-row summary-row"><span>汇总</span><span>2 条记录</span><span>待报价 1 条</span></div>
+      </div>
+    </section>
     <script>document.querySelector("#load").addEventListener("click",()=>{setTimeout(()=>{document.querySelector("#dynamic").innerHTML="<p><strong>客户案例：</strong>某销售团队用情境提醒降低了新人培训成本。</p>"},500)})</script>
   </body>
 </html>

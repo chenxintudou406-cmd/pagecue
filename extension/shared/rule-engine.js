@@ -43,6 +43,32 @@
     return { matched, reason: matched ? "included" : "missing", terms: includeTerms.filter((_, index) => results[index]) };
   }
 
+  function resolvePageStrategy(rule = {}, url = "") {
+    if (rule.pageScope === "global") return { matchScope: "page", selector: "", excludeSelector: "", pageGroupId: null };
+    const strategies = Array.isArray(rule.pageStrategies) ? rule.pageStrategies : [];
+    const matched = strategies.find(strategy => matchesSite(url, strategy.sitePatterns || []));
+    if (!matched) return { matchScope: "page", selector: "", excludeSelector: "", pageGroupId: null };
+    const matchScope = ["module", "row"].includes(matched.matchScope) ? matched.matchScope : "page";
+    return {
+      pageGroupId: matched.pageGroupId || null,
+      matchScope,
+      selector: matchScope === "page" ? "" : String(matched.selector || ""),
+      excludeSelector: matchScope === "page" ? "" : String(matched.excludeSelector || "")
+    };
+  }
+
+  function evaluateRuleUnits(rule = {}, units = [], context = {}) {
+    const evaluations = units.map((unit, index) => ({ index, result: evaluateRule(rule, { ...context, text: String(unit?.text ?? unit ?? "") }) }));
+    const matchedUnitIndexes = evaluations.filter(item => item.result.matched).map(item => item.index);
+    const matchedTerms = [...new Set(evaluations.flatMap(item => item.result.terms || []))];
+    return {
+      matched: matchedUnitIndexes.length > 0,
+      reason: matchedUnitIndexes.length ? "included" : (units.length ? evaluations[0]?.result.reason || "missing" : "no_units"),
+      matchedUnitIndexes,
+      terms: matchedTerms
+    };
+  }
+
   function matchSignature(rule = {}, context = {}) {
     const sourceText = String(context.text || "");
     const text = rule.caseSensitive ? sourceText : sourceText.toLocaleLowerCase();
@@ -72,5 +98,5 @@
     });
   }
 
-  return { patternToRegex, matchesSite, testTerm, evaluateRule, evaluateMemos, matchSignature };
+  return { patternToRegex, matchesSite, testTerm, evaluateRule, evaluateRuleUnits, resolvePageStrategy, evaluateMemos, matchSignature };
 });

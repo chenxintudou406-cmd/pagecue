@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
-    <title>前衍提醒 PageCue | 组织管理台</title>
+    <title>页知 PageCue | 组织管理台</title>
     <link id="admin-favicon" rel="icon" type="image/png" />
     <link id="admin-stylesheet" rel="stylesheet" />
     <script>
@@ -13,13 +13,13 @@
       document.getElementById("admin-favicon").href = adminAsset("pagecue-logo.png");
     </script>
   </head>
-  <body>
+  <body class="glass-theme">
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <div class="app-shell">
       <aside class="sidebar" aria-label="主导航">
         <div class="brand">
           <img id="brand-logo" class="brand-mark" alt="" />
-          <div class="brand-copy"><strong>前衍提醒</strong><small>PageCue · 组织管理台</small></div>
+          <div class="brand-copy"><strong>页知</strong><small>PageCue · 3.1</small></div>
         </div>
 
         <nav class="main-nav">
@@ -28,13 +28,19 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z" /></svg><span>运营概览</span>
           </button>
           <button class="nav-item" data-view="memos">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5V4Zm3 4h8M8 12h8M8 16h5" /></svg><span>知识与规则</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5V4Zm3 4h8M8 12h8M8 16h5" /></svg><span>提醒管理</span>
+          </button>
+          <button class="nav-item" data-view="suppliers">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M6 20V7l6-3 6 3v13M9 10h2m2 0h2m-6 4h2m2 0h2m-4 6v-3h2v3" /></svg><span>供应商卡片</span>
           </button>
           <button class="nav-item" data-view="pagegroups">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h7v6H4V5Zm9 0h7v6h-7V5ZM4 13h7v6H4v-6Zm9 0h7v6h-7v-6Z" /></svg><span>页面组</span>
           </button>
           <button class="nav-item" data-view="tools">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8M18 13v6H5V6h6" /></svg><span>团队工具箱</span>
+          </button>
+          <button class="nav-item" data-view="accounts">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-6 9c0-4 2.4-6 6-6 1.5 0 2.8.3 3.8 1M16 13l-2 2 2 2M14 15h7M17 8h4v4" /></svg><span>账号绑定</span>
           </button>
           <button class="nav-item" data-view="groups">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8-1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3 19c0-3 2-5 5-5s5 2 5 5M13 14c.7-.6 1.7-1 3-1 2.7 0 4.5 1.8 4.5 4.5" /></svg><span>成员分组</span>
@@ -58,7 +64,7 @@
           <section id="view-overview" class="view active" aria-labelledby="page-title">
             <div class="overview-summary">
               <div class="overview-copy"><span class="status-chip"><i></i>服务运行正常</span><h2>把知识放到需要它的页面</h2><p>规则在成员浏览器本地匹配，管理台只接收匿名触发和操作结果。</p></div>
-              <div class="summary-stats"><div><span>生效规则</span><strong id="hero-rule-count">0</strong></div><div><span>页面组</span><strong id="hero-page-count">0</strong></div></div>
+              <div class="summary-side"><div class="summary-stats"><div><span>生效规则</span><strong id="hero-rule-count">0</strong></div><div><span>页面组</span><strong id="hero-page-count">0</strong></div></div><button id="push-extension-update" class="button secondary" type="button">通知检查新版本</button><small id="push-summary">商店发布新版后，可通知在线设备立即检查</small></div>
             </div>
             <div id="metric-grid" class="metric-grid" aria-label="关键指标"></div>
             <div class="dashboard-grid">
@@ -68,9 +74,13 @@
           </section>
 
           <section id="view-memos" class="view" aria-labelledby="page-title">
-            <div class="toolbar"><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><span class="sr-only">搜索提醒</span><input id="memo-search" type="search" placeholder="搜索标题、正文或标签" /></label><label class="select-field"><span class="sr-only">筛选状态</span><select id="memo-status"><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿</option><option value="archived">已撤回</option></select></label></div>
+            <div class="toolbar"><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><span class="sr-only">搜索提醒</span><input id="memo-search" type="search" placeholder="搜索标题、正文或标签" /></label><label class="select-field"><select id="memo-type"><option value="all">知识与操作</option><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label class="select-field"><span class="sr-only">筛选状态</span><select id="memo-status"><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿</option></select></label></div>
             <div class="list-header" aria-hidden="true"><span>提醒内容</span><span>状态与范围</span><span>操作</span></div>
             <div id="memo-list" class="content-list"></div>
+            <section class="activity-section" aria-labelledby="memo-activity-title">
+              <div class="section-toolbar"><div><h2 id="memo-activity-title">成员新增与反馈记录</h2><p>记录提醒创建者，以及成员的确认、忽略、稍后提醒和有用性反馈。</p></div></div>
+              <div id="memo-activity-list" class="activity-list"></div>
+            </section>
           </section>
 
           <section id="view-pagegroups" class="view" aria-labelledby="page-title">
@@ -78,13 +88,38 @@
             <div id="page-group-list" class="page-group-list"></div>
           </section>
 
+          <section id="view-suppliers" class="view" aria-labelledby="page-title">
+            <div class="section-toolbar"><div><h2>供应商资料</h2><p>本期由后台手工维护；数据结构已预留批量表格与飞书表格来源。</p></div><button id="new-supplier" class="button secondary">新建供应商</button></div>
+            <div class="toolbar"><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><span class="sr-only">搜索供应商</span><input id="supplier-search" type="search" placeholder="搜索公司、客户 ID、联系人或优势产品" /></label></div>
+            <div id="supplier-list" class="supplier-list"></div>
+          </section>
+
           <section id="view-tools" class="view" aria-labelledby="page-title">
             <div class="section-toolbar"><div><h2>统一团队工作入口</h2><p>发布后，成员可直接在浏览器侧栏访问常用系统。</p></div><button id="new-tool" class="button secondary">新建工具链接</button></div>
             <div id="tool-list" class="tool-grid"></div>
           </section>
 
+          <section id="view-accounts" class="view" aria-labelledby="page-title">
+            <div class="section-toolbar"><div><h2>成员账号与设备绑定</h2><p>管理成员姓名和分组，查看设备绑定编号、绑定记录及最近登录。</p></div><button id="new-account" class="button secondary">新建成员</button></div>
+            <div id="account-summary" class="account-summary" aria-label="账号绑定概览"></div>
+            <div class="toolbar account-toolbar">
+              <label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><span class="sr-only">搜索账号</span><input id="account-search" type="search" placeholder="搜索姓名、组别或绑定编号" /></label>
+              <label class="select-field"><span class="sr-only">筛选成员组</span><select id="account-group-filter"><option value="all">全部成员组</option></select></label>
+              <label class="select-field"><span class="sr-only">筛选绑定状态</span><select id="account-status-filter"><option value="all">全部账号</option><option value="bound">已绑定</option><option value="unbound">未绑定</option><option value="disabled">已停用</option></select></label>
+            </div>
+            <div class="account-table-head" aria-hidden="true"><span>成员账号</span><span>所属组别</span><span>绑定设备</span><span>最近登录</span><span>操作</span></div>
+            <div id="account-list" class="account-list"></div>
+            <section class="invitation-management" aria-labelledby="invitation-management-title">
+              <div class="section-toolbar"><div><h2 id="invitation-management-title">邀请码管理</h2><p>查看邀请码状态，复制仍有效的邀请码，或删除不再需要的记录。</p></div><label class="select-field"><span class="sr-only">筛选邀请码</span><select id="invitation-status-filter"><option value="all">全部邀请码</option><option value="pending">待使用</option><option value="used">已使用</option><option value="expired">已过期</option></select></label></div>
+              <div class="invitation-table-head" aria-hidden="true"><span>成员</span><span>邀请码</span><span>状态</span><span>创建与到期</span><span>操作</span></div>
+              <div id="invitation-management-list" class="invitation-management-list"></div>
+            </section>
+          </section>
+
           <section id="view-groups" class="view" aria-labelledby="page-title">
-            <div class="section-toolbar"><div><h2>按角色控制内容可见范围</h2><p>组织提醒和工具链接可面向全体成员或指定成员组。</p></div></div>
+            <div class="section-toolbar"><div><h2>成员、邀请码与分组</h2><p>邀请码绑定真实成员与设备，停用成员或撤销设备后权限立即失效。</p></div><button id="new-member" class="button secondary">新建成员</button></div>
+            <div id="member-list" class="content-list"></div>
+            <div class="section-toolbar"><div><h2>成员分组</h2><p>组织提醒和工具链接可面向全体、指定人员或成员组。</p></div></div>
             <div id="group-list" class="group-grid"></div>
           </section>
         </main>
@@ -96,7 +131,7 @@
         <div class="dialog-head"><div><span>组织提醒</span><h2 id="memo-dialog-title">新建组织提醒</h2></div><button type="button" class="icon-button" data-close="memo-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
         <input type="hidden" name="id" />
         <div class="form-sections">
-          <section class="form-section"><div class="form-section-title"><span>1</span><div><h3>提醒内容</h3><p>成员看到的标题与正文</p></div></div><div class="form-grid"><label class="wide">标题 <em>必填</em><input name="title" maxlength="120" required placeholder="例如：报价页面提醒" /></label><label class="wide">正文<textarea name="body" rows="5" placeholder="支持基础 Markdown"></textarea></label></div></section>
+          <section class="form-section"><div class="form-section-title"><span>1</span><div><h3>提醒内容</h3><p>先选择知识或操作提醒</p></div></div><div class="form-grid"><label>提醒类型<select name="type"><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label class="wide">标题 <em>必填</em><input name="title" maxlength="120" required placeholder="例如：报价页面提醒" /></label><label class="wide">正文<textarea name="body" rows="5" placeholder="支持基础 Markdown"></textarea></label></div></section>
           <section class="form-section"><div class="form-section-title"><span>2</span><div><h3>触发条件</h3><p>设置页面范围和关键词规则</p></div></div><div class="form-grid">
             <fieldset class="wide scope-field"><legend>生效页面</legend><div class="scope-options"><label><input type="radio" name="pageScope" value="global" checked /><span><b>全局页面</b><small>所有已授权网页</small></span></label><label><input type="radio" name="pageScope" value="page_groups" /><span><b>特定页面组</b><small>仅所选业务页面</small></span></label></div><div id="page-group-picker" class="page-group-picker" hidden><span class="field-label">选择页面组，可多选</span><div id="memo-page-group-options" class="checkbox-grid"></div></div></fieldset>
             <label>包含关键词 <em>必填</em><textarea name="includeTerms" rows="3" placeholder="每行一个" required></textarea><small>满足关键词关系时触发提醒</small></label>
@@ -105,19 +140,74 @@
             <label>冷却时间<input type="number" name="cooldownMinutes" min="1" max="10080" value="30" /><small>单位：分钟</small></label>
             <div class="wide inline-checks"><label><input type="checkbox" name="caseSensitive" />区分大小写</label><label><input type="checkbox" name="useRegex" />使用正则表达式</label></div>
           </div></section>
-          <section class="form-section"><div class="form-section-title"><span>3</span><div><h3>发布设置</h3><p>控制接收成员、级别和有效期</p></div></div><div class="form-grid"><label>目标成员组<select name="targetGroupId"></select></label><label>提醒级别<select name="priority"><option value="normal">普通，页内提示</option><option value="important">重要，同时系统通知</option></select></label><label>状态<select name="status"><option value="published">立即发布</option><option value="draft">保存为草稿</option></select></label><label>到期时间<input type="datetime-local" name="expiresAt" /></label><label class="wide">标签<input name="tags" placeholder="销售, 报价, SOP" /></label><label>链接名称<input name="linkLabel" placeholder="查看完整流程" /></label><label>链接地址<input name="linkUrl" type="url" placeholder="https://..." /></label></div></section>
+          <section class="form-section annotation-section"><div class="form-section-title"><span>3</span><div><h3>批注呈现</h3><p>整条提醒统一使用一种模板</p></div></div><div class="form-grid">
+            <fieldset class="wide template-field"><legend>选择批注模板</legend><div class="template-options">
+              <label><input type="radio" name="annotationTemplate" value="light" /><span><i class="template-swatch light"></i><b>轻</b><small>蓝色高亮和划线，点击查看</small></span></label>
+              <label><input type="radio" name="annotationTemplate" value="standard" checked /><span><i class="template-swatch standard"></i><b>中</b><small>黄色标记和紧凑卡片，可确认</small></span></label>
+              <label><input type="radio" name="annotationTemplate" value="strong" /><span><i class="template-swatch strong"></i><b>重</b><small>红色持续提醒，条件存在就显示</small></span></label>
+            </div></fieldset>
+            <label class="wide">需要高亮的关键词<textarea name="keywordTerms" rows="3" placeholder="每行一个；留空时高亮全部包含关键词"></textarea><small>这里只控制页面标记，不改变触发规则。</small></label>
+            <div class="wide anchor-editor"><div class="anchor-editor-head"><div><b>页面元素锚点</b><small>可绑定输入框、按钮、内容块或列表同一行内的元素</small></div><span id="anchor-count" class="pill">0 / 20</span></div><div id="memo-anchor-list" class="anchor-list"><div class="empty">保存提醒后可在真实网页中点选元素</div></div></div>
+          </div></section>
+          <section class="form-section"><div class="form-section-title"><span>4</span><div><h3>发布设置</h3><p>控制接收成员、有效期和资料链接</p></div></div><div class="form-grid"><label>目标成员组<select name="targetGroupId"></select></label><label>目标人员<select name="targetUserIds" multiple size="4"></select></label><label>提醒级别<select name="priority"><option value="normal">普通提醒</option><option value="important">重要提醒</option></select></label><label>状态<select name="status"><option value="published">立即发布</option><option value="draft">保存为草稿</option></select></label><label data-operation-start hidden>开始时间<input type="datetime-local" name="startsAt" /></label><label>到期时间<input type="datetime-local" name="expiresAt" /></label><label class="wide">关联供应商<select name="supplierId"><option value="">不关联供应商卡片</option></select><small>成员点击提醒中的“查看供应商”后，才会按权限加载详情。</small></label><label class="wide">标签<input name="tags" placeholder="销售, 报价, SOP" /></label><label class="wide">超链接（每行：名称 | https://地址）<textarea name="links" rows="4" placeholder="报价SOP | https://example.com/sop"></textarea></label></div></section>
         </div>
-        <div class="dialog-actions"><button type="button" class="button ghost" data-close="memo-dialog">取消</button><button type="submit" class="button primary">保存提醒</button></div>
+        <div class="dialog-actions"><button type="button" class="button ghost" data-close="memo-dialog">取消</button><button type="submit" class="button secondary" data-save-only="true">仅保存</button><button type="submit" class="button secondary" data-annotate="true">保存并在网页中标记</button><button type="submit" class="button primary" data-publish="true">发布并推送</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="supplier-dialog" class="drawer-dialog">
+      <form id="supplier-form" method="dialog">
+        <div class="dialog-head"><div><span>供应商卡片</span><h2 id="supplier-dialog-title">新建供应商</h2></div><button type="button" class="icon-button" data-close="supplier-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
+        <div class="form-sections">
+          <section class="form-section"><div class="form-section-title"><span>1</span><div><h3>基础资料</h3><p>公司、客户编号和主要联系人</p></div></div><div class="form-grid"><label class="wide">公司名称 <em>必填</em><input name="companyName" maxlength="160" required /></label><label>客户 ID <em>必填</em><input name="customerId" maxlength="80" required /></label><label>联系人<input name="contactName" maxlength="120" /></label><label>岗位<input name="contactTitle" maxlength="120" /></label><label>电话<input name="phone" maxlength="80" /></label><label>邮箱<input name="email" type="email" maxlength="200" /></label><label class="wide">匹配词 <em>必填</em><textarea name="matchTerms" rows="3" required placeholder="每行一个，例如：公司简称、客户 ID、供应商名称"></textarea><small>关联提醒时可自动带入这些关键词，网页触发仍受提醒的页面范围和 AND/OR 规则控制。</small></label></div></section>
+          <section class="form-section"><div class="form-section-title"><span>2</span><div><h3>业务数据</h3><p>只展示排序百分位，不展示产品与订单原始数量</p></div></div><div class="form-grid"><label>统计周期<input name="periodLabel" value="近12个月" /></label><label>产品数排序百分位<input name="productPercentile" type="number" min="0" max="100" step="0.1" value="0" /></label><label>订单数排序百分位<input name="orderPercentile" type="number" min="0" max="100" step="0.1" value="0" /></label><label>成交率<input name="closeRate" type="number" min="0" max="100" step="0.1" value="0" /></label><label>报价率<input name="quoteRate" type="number" min="0" max="100" step="0.1" value="0" /></label><label>售后率<input name="afterSalesRate" type="number" min="0" max="100" step="0.1" value="0" /></label><label class="wide">优势产品（每行：产品 | CAS | 成交率）<textarea name="advantageProducts" rows="5" placeholder="氯乙酸 | 79-11-8 | 72"></textarea></label></div></section>
+          <section class="form-section"><div class="form-section-title"><span>3</span><div><h3>评价</h3><p>演示阶段各录入一条，后续可扩展为评论流</p></div></div><div class="form-grid"><label class="wide">短期评价<textarea name="shortEvaluation" rows="3"></textarea></label><label>贡献者<input name="shortContributor" maxlength="120" /></label><label>评价时间<input name="shortAt" type="datetime-local" /></label><label class="wide">长期评价<textarea name="longEvaluation" rows="3"></textarea></label><label>贡献者<input name="longContributor" maxlength="120" /></label><label>评价时间<input name="longAt" type="datetime-local" /></label></div></section>
+        </div>
+        <div class="dialog-actions"><button type="button" class="button ghost" data-close="supplier-dialog">取消</button><button type="submit" class="button primary">保存供应商</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="annotation-session-dialog" class="modal-dialog">
+      <form id="annotation-session-form" method="dialog">
+        <div class="dialog-head"><div><span>网页可视化点选</span><h2>创建元素批注</h2></div><button type="button" class="icon-button" data-close="annotation-session-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
+        <input type="hidden" name="memoId" />
+        <div class="modal-body form-grid">
+          <div id="annotation-memo-summary" class="wide strategy-summary"></div>
+          <label>页面组 <em>必填</em><select name="pageGroupId" required></select></label>
+          <label>锚点名称 <em>必填</em><input name="label" required maxlength="120" placeholder="例如：批次号填写规则" /></label>
+          <label class="wide">目标页面网址 <em>必填</em><input name="url" type="url" required placeholder="https://example.com/page" /><small>将打开该页面并进入点选模式；请先确保插件已授权此站点。</small></label>
+          <label class="wide inline-checks"><input type="checkbox" name="relativeToMatchUnit" />锚点相对于命中的模块或列表行定位</label>
+          <div id="annotation-session-result" class="wide annotation-session-result" role="status" aria-live="polite"><strong>尚未创建标记任务</strong><p>搜狗无法自动进入时，可在插件“网页标记”入口输入一次性代码。</p></div>
+        </div>
+        <div class="dialog-actions"><button type="button" class="button ghost" data-close="annotation-session-dialog">关闭</button><button type="submit" class="button primary">打开网页并开始标记</button></div>
       </form>
     </dialog>
 
     <dialog id="page-group-dialog" class="modal-dialog">
-      <form id="page-group-form" method="dialog"><div class="dialog-head"><div><span>页面范围</span><h2 id="page-group-dialog-title">新建页面组</h2></div><button type="button" class="icon-button" data-close="page-group-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><input type="hidden" name="id" /><div class="modal-body form-grid"><label class="wide">页面组名称 <em>必填</em><input name="name" maxlength="80" required placeholder="例如：前衍询单页面" /></label><label class="wide">用途说明<input name="description" maxlength="300" placeholder="说明这组页面对应的业务场景" /></label><label class="wide">网址规则 <em>必填</em><textarea name="sitePatterns" rows="6" required placeholder="每行一个，例如：https://www.example.com/*"></textarea><small>支持 * 通配符</small></label></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="page-group-dialog">取消</button><button type="submit" class="button primary">保存页面组</button></div></form>
+      <form id="page-group-form" method="dialog"><div class="dialog-head"><div><span>页面范围</span><h2 id="page-group-dialog-title">新建页面组</h2></div><button type="button" class="icon-button" data-close="page-group-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><input type="hidden" name="id" /><div class="modal-body form-grid"><label class="wide">页面组名称 <em>必填</em><input name="name" maxlength="80" required placeholder="例如：询单管理页面" /></label><label class="wide">用途说明<input name="description" maxlength="300" placeholder="说明这组页面对应的业务场景" /></label><label class="wide">网址规则 <em>必填</em><textarea name="sitePatterns" rows="6" required placeholder="每行一个，例如：https://www.example.com/*"></textarea><small>支持 * 通配符</small></label></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="page-group-dialog">取消</button><button type="submit" class="button primary">保存页面组</button></div></form>
+    </dialog>
+
+    <dialog id="strategy-test-dialog" class="modal-dialog">
+      <form id="strategy-test-form" method="dialog">
+        <div class="dialog-head"><div><span>页面策略验证</span><h2 id="strategy-test-title">测试模块匹配</h2></div><button type="button" class="icon-button" data-close="strategy-test-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
+        <input type="hidden" name="pageGroupId" />
+        <div class="modal-body form-grid">
+          <div id="strategy-test-summary" class="wide strategy-summary"></div>
+          <label class="wide">测试页面网址 <em>必填</em><input name="testUrl" type="url" required placeholder="https://example.com/list" /><small>请先在扩展中授权这个网站。开始测试后会在新标签页打开。</small></label>
+          <label class="wide">测试关键词 <em>必填</em><textarea name="testKeywords" rows="4" required placeholder="每行一个关键词；测试时按 AND 关系判断"></textarea></label>
+          <div id="strategy-test-result" class="wide strategy-result" role="status" aria-live="polite"><strong>尚未开始测试</strong><p>扩展会在真实页面中统计模块或列表行，并返回命中结果。</p></div>
+        </div>
+        <div class="dialog-actions"><button type="button" class="button ghost" data-close="strategy-test-dialog">取消</button><button type="submit" class="button primary">保存并开始测试</button></div>
+      </form>
     </dialog>
 
     <dialog id="tool-dialog" class="modal-dialog">
       <form id="tool-form" method="dialog"><div class="dialog-head"><div><span>团队工具</span><h2 id="tool-dialog-title">新建工具链接</h2></div><button type="button" class="icon-button" data-close="tool-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><input type="hidden" name="id" /><div class="modal-body form-grid"><label>工具名称 <em>必填</em><input name="title" required /></label><label>分类<input name="category" value="常用" required /></label><label class="wide">地址 <em>必填</em><input name="url" type="url" required placeholder="https://..." /></label><label class="wide">简介<input name="description" /></label><label>图标文字<input name="icon" maxlength="4" value="COA" /></label><label>目标成员组<select name="targetGroupId"></select></label><label>排序值<input name="sortOrder" type="number" value="0" /></label><label>状态<select name="status"><option value="published">已发布</option><option value="draft">草稿</option></select></label></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="tool-dialog">取消</button><button type="submit" class="button primary">保存链接</button></div></form>
     </dialog>
+
+    <dialog id="member-dialog" class="modal-dialog"><form id="member-form"><div class="dialog-head"><div><span>成员权限</span><h2 id="member-dialog-title">新建成员</h2></div><button type="button" class="icon-button" data-close="member-dialog" aria-label="关闭">×</button></div><input type="hidden" name="id"><div class="modal-body form-grid"><label class="wide">成员姓名<input name="name" required maxlength="120"></label><label class="wide">所属分组<select name="groupIds" multiple size="5"></select></label><label>状态<select name="status"><option value="active">正常</option><option value="disabled">停用</option></select></label></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="member-dialog">取消</button><button class="button primary">保存成员</button></div></form></dialog>
+
+    <dialog id="account-detail-dialog" class="drawer-dialog account-detail-dialog"><div class="account-detail-shell"><div class="dialog-head"><div><span>账号绑定详情</span><h2 id="account-detail-title">成员账号</h2></div><button type="button" class="icon-button" data-close="account-detail-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><div id="account-detail-body" class="account-detail-body"></div></div></dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <noscript><p class="noscript">管理后台需要启用 JavaScript。</p></noscript>

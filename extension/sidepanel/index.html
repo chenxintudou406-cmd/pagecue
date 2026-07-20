@@ -1,73 +1,37 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>前衍提醒 · PageCue</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <header>
-      <div class="brand"><img src="../assets/icon-128.png" alt="" /><div><strong>前衍提醒</strong><small id="workspace-name">PageCue · 本地工作区</small></div></div>
-      <button id="open-settings" class="round-button" title="设置">⌘</button>
-    </header>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>页知 · PageCue</title><link rel="stylesheet" href="styles.css"></head>
+<body class="glass-theme">
+  <header><div class="brand"><img src="../assets/icon-128.png" alt=""><div><strong>页知</strong><small id="workspace-name">PageCue</small></div></div><button id="open-settings" class="round-button" title="设置">⚙</button></header>
+  <div class="search"><span>⌕</span><input id="global-search" placeholder="搜索提醒和工具"><kbd>Ctrl K</kbd></div>
+  <nav>
+    <button class="active" data-tab="alerts">当前提醒 <span id="alert-count">0</span></button>
+    <button data-tab="memos">提醒库</button><button data-tab="tools">工具箱</button>
+  </nav>
+  <main>
+    <section id="tab-alerts" class="tab active"><div class="section-head"><div><p class="kicker">ON THIS PAGE</p><h1>当前页面提醒</h1></div><button id="refresh-context" class="icon-button">↻</button></div><div id="page-context" class="page-context"></div><div id="alert-list" class="card-list"></div></section>
+    <section id="tab-memos" class="tab"><div class="section-head"><div><p class="kicker">REMINDER LIBRARY</p><h1>提醒库</h1></div><button id="new-personal" class="add-button">＋ 新建</button></div><div class="scope-filter"><button class="active" data-filter="all">全部</button><button data-filter="knowledge">知识</button><button data-filter="operation">操作</button><button data-filter="personal">我的</button><button data-filter="organization">组织</button></div><div id="memo-list" class="card-list"></div></section>
+    <section id="tab-tools" class="tab"><div class="section-head"><div><p class="kicker">QUICK ACCESS</p><h1>团队工具箱</h1></div></div><div id="tool-list"></div></section>
+  </main>
+  <footer><span id="connection-dot"></span><span id="connection-text">等待邀请码绑定</span><button id="footer-sync">立即同步</button></footer>
 
-    <div class="search"><span>⌕</span><input id="global-search" placeholder="搜索备忘、提醒和工具" /><kbd>Ctrl K</kbd></div>
+  <aside id="settings-panel" class="drawer" aria-hidden="true">
+    <div class="drawer-head"><div><p class="kicker">IDENTITY & ACCESS</p><h2>账号、连接与站点</h2></div><button id="close-settings" class="round-button">×</button></div>
+    <div id="identity-card" class="identity-card"></div>
+    <div id="bind-box" class="setting-section"><h3>使用邀请码绑定</h3><p class="setting-tip">邀请码会把本设备持续绑定到你的成员账号和分组，不能通过修改 ID 冒充他人。</p><div class="grant-box"><input id="invite-code" maxlength="32" autocomplete="one-time-code" placeholder="输入管理员发放的邀请码"><button id="bind-invite">绑定</button></div></div>
+    <div class="privacy-note"><b>● 组织页面自动监控</b><p>后台页面组会自动生效；匹配仍在本地完成，网页正文、表单和 Cookie 不会进入组织统计。</p></div>
+    <div class="setting-section annotation-code-section"><h3>网页标记</h3><p class="setting-tip">搜狗无法从后台直接唤起时，输入后台生成的 6 位一次性标记码。</p><div class="grant-box"><input id="annotation-code" inputmode="numeric" maxlength="6" placeholder="6 位标记码"><button id="start-annotation-code">开始标记</button></div></div>
+    <div id="update-notice" class="update-notice" hidden><strong>发现新版本 <span id="update-version"></span></strong><p>解压安装版本需要下载后手动更新。</p><a id="update-download" target="_blank" rel="noreferrer">下载兼容版</a></div>
+    <details class="advanced-settings"><summary>高级连接设置</summary><label>服务地址<input id="api-base" value="https://pagecue.herotop.cn"></label><button id="save-connection" class="primary wide">保存服务地址</button></details>
+    <div class="setting-section"><h3>正在监控的站点</h3><div id="site-list"></div></div><div class="grant-box"><input id="site-pattern" placeholder="https://crm.example.com/*"><button id="grant-site">添加个人站点</button></div><button id="grant-current" class="secondary wide">添加当前网站</button>
+  </aside>
 
-    <nav>
-      <button class="active" data-tab="alerts">当前提醒 <span id="alert-count">0</span></button>
-      <button data-tab="memos">备忘库</button>
-      <button data-tab="tools">工具箱</button>
-    </nav>
+  <dialog id="personal-dialog"><form id="personal-form"><div class="dialog-head"><div><p class="kicker">PERSONAL REMINDER</p><h2 id="personal-title">新建个人提醒</h2></div><button type="button" data-close-dialog="personal">×</button></div><input type="hidden" name="id">
+    <div class="two-cols"><label>类型<select name="type"><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label>提醒程度<select name="annotationTemplate"><option value="light">轻 · 仅标记</option><option value="standard" selected>中 · 可确认</option><option value="strong">重 · 持续出现</option></select></label><label>页面范围<select name="pageScope"><option value="global">全局页面</option><option value="page_groups">特定页面组</option></select></label></div><label data-personal-page-group hidden>页面组<select name="pageGroupId"></select></label>
+    <label>标题<input name="title" required maxlength="120"></label><label>正文<textarea name="body" rows="5"></textarea></label><label>包含关键词<input name="includeTerms" required placeholder="多个词用逗号分隔"></label><label>标签<input name="tags" placeholder="个人, 客户跟进"></label>
+    <div data-operation-dates hidden class="two-cols"><label>开始时间<input name="startsAt" type="datetime-local"></label><label>结束时间<input name="expiresAt" type="datetime-local"></label></div>
+    <label>超链接（每行：名称 | https://地址）<textarea name="links" rows="3" placeholder="客户询单 | https://example.com/inquiry"></textarea></label><div class="dialog-actions"><button type="button" class="ghost" data-close-dialog="personal">取消</button><button class="primary">保存提醒</button></div>
+  </form></dialog>
 
-    <main>
-      <section id="tab-alerts" class="tab active">
-        <div class="section-head"><div><p class="kicker">ON THIS PAGE</p><h1>当前页面提醒</h1></div><button id="refresh-context" class="icon-button" title="刷新">↻</button></div>
-        <div id="page-context" class="page-context"></div>
-        <div id="alert-list" class="card-list"></div>
-      </section>
-
-      <section id="tab-memos" class="tab">
-        <div class="section-head"><div><p class="kicker">MEMORY LIBRARY</p><h1>我的备忘库</h1></div><button id="new-personal" class="add-button">＋ 新建</button></div>
-        <div class="scope-filter"><button class="active" data-scope="all">全部</button><button data-scope="personal">我的</button><button data-scope="organization">组织</button></div>
-        <div id="memo-list" class="card-list"></div>
-      </section>
-
-      <section id="tab-tools" class="tab">
-        <div class="section-head"><div><p class="kicker">QUICK ACCESS</p><h1>团队工具箱</h1></div></div>
-        <div id="tool-list"></div>
-      </section>
-    </main>
-
-    <footer><span id="connection-dot"></span><span id="connection-text">正在连接本地服务</span><button id="footer-sync">立即同步</button></footer>
-
-    <aside id="settings-panel" class="drawer" aria-hidden="true">
-      <div class="drawer-head"><div><p class="kicker">PRIVACY & ACCESS</p><h2>设置与站点授权</h2></div><button id="close-settings" class="round-button">×</button></div>
-      <div class="privacy-note"><b>◇ 本地匹配模式</b><p>插件只读取你明确授权的网站。网页正文、表单和 Cookie 不会上传服务器。</p></div>
-      <label>本地服务地址<input id="api-base" value="http://127.0.0.1:8787" /></label>
-      <label>演示成员 ID<input id="user-id" value="user_demo" /></label>
-      <button id="save-connection" class="primary wide">保存并重新同步</button>
-      <div class="setting-section"><h3>已授权站点</h3><div id="site-list"></div></div>
-      <div class="grant-box"><input id="site-pattern" placeholder="https://crm.example.com/*" /><button id="grant-site">授权站点</button></div>
-      <button id="grant-current" class="secondary wide">授权当前网站</button>
-      <p class="setting-tip">新增授权后请刷新对应网页，以启动自动识别。</p>
-    </aside>
-    <div id="drawer-backdrop" class="backdrop"></div>
-
-    <dialog id="personal-dialog">
-      <form id="personal-form" method="dialog">
-        <div class="dialog-head"><div><p class="kicker">PERSONAL NOTE</p><h2 id="personal-title">新建个人备忘</h2></div><button type="button" data-close-dialog>×</button></div>
-        <input type="hidden" name="id" />
-        <label>标题<input name="title" required maxlength="120" placeholder="这条备忘要提醒我什么？" /></label>
-        <label>内容<textarea name="body" rows="6" placeholder="支持 **粗体** 等基础 Markdown"></textarea></label>
-        <div class="two-cols"><label>页面范围<select name="pageScope"><option value="global">全局页面</option><option value="page_groups">特定页面组</option></select></label><label data-personal-page-group hidden>页面组<select name="pageGroupId"></select></label></div>
-        <label>包含关键词<input name="includeTerms" placeholder="用逗号分隔" required /></label>
-        <label>标签<input name="tags" placeholder="个人, 客户跟进" /></label>
-        <div class="dialog-actions"><button type="button" class="ghost" data-close-dialog>取消</button><button type="submit" class="primary">保存备忘</button></div>
-      </form>
-    </dialog>
-
-    <div id="toast" class="toast"></div>
-    <script src="app.js"></script>
-  </body>
-</html>
+  <div id="toast" class="toast"></div><script src="app.js"></script>
+</body></html>

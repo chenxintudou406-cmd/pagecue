@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>页知｜批注展现 Demo</title>
+  <!--
+    设计假设：
+    1. 用户需要确认的是“批注如何出现在真实页面里”，不是后台配置页面。
+    2. 案例一用于关键词规则；案例二用于页面元素锚点。
+    3. 原型沿用页知现有 navy / teal / lime / coral 色板，不改变产品气质。
+    4. 所有数据均为演示文案，不代表真实商品、库存或业务结论。
+  -->
+  <style>
+    :root{
+      --ink:#172326;--muted:#667577;--paper:#eef1ec;--surface:#fff;--line:#d9dfda;
+      --teal:#0d766e;--teal-dark:#075b55;--lime:#d9f26a;--coral:#d8654d;--navy:#102d32;
+      --warning:#ffd75e;--warning-soft:#fff4c4;--danger:#be4938;--shadow:0 20px 60px rgba(16,45,50,.15);
+    }
+    *{box-sizing:border-box}
+    html,body{min-height:100%;margin:0}
+    body{background:var(--paper);color:var(--ink);font-family:"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+    button{font:inherit;cursor:pointer}
+    .page-shell{width:min(1380px,calc(100% - 40px));margin:28px auto 44px}
+    .intro{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:32px;align-items:end;margin-bottom:22px}
+    .brand{display:flex;align-items:center;gap:10px;margin-bottom:14px;color:var(--teal);font-size:12px;font-weight:800;letter-spacing:.08em}
+    .brand img{width:30px;height:30px;border-radius:7px}
+    h1{max-width:720px;margin:0;font-size:34px;line-height:1.2;letter-spacing:-.04em;text-wrap:balance}
+    .intro p{max-width:760px;margin:10px 0 0;color:var(--muted);font-size:14px}
+    .legend{display:flex;gap:12px;padding:10px 12px;border:1px solid var(--line);background:#f8faf7;font-size:11px;color:var(--muted)}
+    .legend span{display:flex;align-items:center;gap:6px;white-space:nowrap}
+    .legend i{width:14px;height:8px;background:var(--warning);border-bottom:2px solid #b16c15}
+    .legend i.pin{width:16px;height:16px;border-radius:50%;background:var(--teal);border:0}
+    .demo-switch{display:flex;border-bottom:1px solid #cfd7d1;margin-bottom:16px}
+    .demo-switch button{position:relative;padding:12px 18px;border:0;background:transparent;color:var(--muted);font-size:13px;font-weight:700}
+    .demo-switch button.active{color:var(--teal)}
+    .demo-switch button.active::after{content:"";position:absolute;right:16px;bottom:-1px;left:16px;height:3px;background:var(--teal)}
+    .case{display:none}.case.active{display:block}
+    .case-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+    .case-heading div{display:flex;align-items:center;gap:10px}
+    .case-no{display:grid;place-items:center;width:27px;height:27px;background:var(--navy);color:#fff;font-size:12px;font-weight:900}
+    .case-heading h2{margin:0;font-size:17px}
+    .case-heading p{margin:0;color:var(--muted);font-size:12px}
+    .browser{overflow:hidden;border:1px solid #cbd4ce;background:#fff;box-shadow:var(--shadow)}
+    .browser-top{height:36px;display:flex;align-items:end;gap:12px;padding:0 12px;background:#dfe4e1}
+    .lights{display:flex;gap:6px;padding-bottom:11px}.lights i{width:9px;height:9px;border-radius:50%;background:#aeb9b4}.lights i:first-child{background:#e57563}.lights i:nth-child(2){background:#e8bc52}.lights i:last-child{background:#6db887}
+    .tab{min-width:235px;height:28px;padding:6px 12px;background:#fff;font-size:11px;color:#455456}
+    .address-row{height:42px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #e1e5e2;background:#fff;color:#748183;font-size:12px}
+    .browser-nav{letter-spacing:.2em}.address{flex:1;padding:6px 14px;border-radius:16px;background:#f0f3f1;color:#536164;letter-spacing:0}
+    .site{position:relative;min-height:630px;background:#f7f8f5}
+    .site-header{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 30px;background:#fff;border-bottom:1px solid #e3e7e3}
+    .site-logo{font-size:16px;font-weight:900;letter-spacing:.04em}.site-logo span{color:var(--teal)}
+    .site-links{display:flex;gap:24px;color:#687578;font-size:12px}.site-user{padding:7px 10px;background:#e8f1ed;color:var(--teal);font-size:11px;font-weight:700}
+    .content-layout{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:572px}
+    .catalog{padding:24px 20px;border-right:1px solid #e0e5e1;background:#f2f4f1}
+    .catalog strong{display:block;margin-bottom:14px;font-size:12px}.catalog span{display:block;padding:8px 0;color:#718083;font-size:11px}.catalog .selected{color:var(--teal);font-weight:800}
+    .product-page{position:relative;padding:26px 42px 52px}
+    .breadcrumb{color:#849092;font-size:10px}.product-title{margin:15px 0 5px;font-size:25px;line-height:1.3}.cas{color:#728083;font-family:Consolas,monospace;font-size:11px}
+    .product-grid{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:24px;margin-top:22px}
+    .copy-panel{padding:24px 26px;background:#fff;border:1px solid #dfe5df}
+    .copy-panel h3{margin:0 0 13px;font-size:14px}.copy-panel p{margin:0 0 15px;color:#58676a;font-size:13px;line-height:1.85}
+    .keyword{position:relative;padding:1px 3px;border:0;border-bottom:2px solid #b16c15;background:var(--warning);color:inherit;font-weight:800;cursor:pointer;transition:.15s}
+    .keyword:hover,.keyword.active{background:#ffb962;box-shadow:0 0 0 4px rgba(255,185,98,.22)}
+    .keyword .count{position:absolute;right:-12px;top:-10px;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--danger);color:#fff;font-size:9px;line-height:1}
+    .properties{display:grid;grid-template-columns:120px 1fr;margin-top:18px;border-top:1px solid #e1e5e1;font-size:11px}.properties span{padding:9px 5px;border-bottom:1px solid #e7eae7}.properties span:nth-child(odd){color:#778486}
+    .quote-box{padding:20px;background:#fff;border:1px solid #dfe5df}.quote-box strong{display:block;font-size:13px}.quote-box small{display:block;margin:4px 0 18px;color:#788587}.quote-box button{width:100%;padding:10px;border:0;background:var(--teal);color:#fff;font-size:11px;font-weight:800}
+    .findbar{position:absolute;top:15px;right:42px;z-index:4;display:flex;align-items:center;gap:7px;height:38px;padding:0 7px 0 12px;background:var(--navy);color:#fff;box-shadow:0 10px 28px rgba(16,45,50,.2);font-size:11px}
+    .findbar strong{color:var(--lime)}.findbar span{padding-right:7px;color:#bac8c6}.findbar button{width:28px;height:28px;border:1px solid rgba(255,255,255,.18);background:transparent;color:#fff}.findbar .close-find{border:0;color:#9eb1ae}
+    .annotation-pop{position:absolute;z-index:8;width:340px;padding:18px 18px 14px;background:#fff;border:1px solid #d3dcd5;box-shadow:0 18px 48px rgba(16,45,50,.23);transform:translateY(8px);opacity:0;pointer-events:none;transition:.16s ease}
+    .annotation-pop.show{transform:translateY(0);opacity:1;pointer-events:auto}
+    .annotation-pop::before{content:"";position:absolute;top:-8px;left:50px;width:14px;height:14px;background:#fff;border-top:1px solid #d3dcd5;border-left:1px solid #d3dcd5;transform:rotate(45deg)}
+    .annotation-head{display:flex;align-items:center;justify-content:space-between}.annotation-level{color:var(--danger);font-size:10px;font-weight:900;letter-spacing:.08em}.annotation-pop .x{width:28px;height:28px;border:0;background:transparent;color:#7b898b;font-size:18px}
+    .annotation-pop h4{margin:8px 0 7px;font-size:15px}.annotation-pop p{margin:0;color:#58676a;font-size:12px;line-height:1.7}
+    .why{margin-top:12px;padding:7px 9px;background:#f2f5ef;color:#6b787a;font-size:10px}.annotation-actions{display:flex;gap:7px;margin-top:13px}.annotation-actions button{padding:8px 10px;border:1px solid var(--line);background:#fff;color:#59686a;font-size:10px;font-weight:700}.annotation-actions .primary{border-color:var(--teal);background:var(--teal);color:#fff}
+    .case-note{margin-top:12px;padding:12px 14px;background:#fff;border:1px solid var(--line);color:#607073;font-size:12px}.case-note strong{color:var(--ink)}
+
+    /* Case 2 */
+    .admin-layout{display:grid;grid-template-columns:190px minmax(0,1fr);min-height:572px}
+    .admin-side{padding:22px 18px;background:var(--navy);color:#b7c7c4}.admin-side .admin-brand{margin-bottom:24px;color:#fff;font-size:14px;font-weight:900}.admin-side span{display:block;padding:9px 10px;font-size:11px}.admin-side .active{background:rgba(217,242,106,.13);color:var(--lime);font-weight:800}
+    .form-page{position:relative;padding:24px 34px;background:#f6f7f4}.form-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.form-toolbar h3{margin:0;font-size:20px}.mode-switch{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #aac0b7;background:#fff;color:var(--teal);font-size:10px;font-weight:800}.mode-switch i{width:7px;height:7px;border-radius:50%;background:var(--teal)}
+    .coa-form{position:relative;width:min(720px,calc(100% - 285px));padding:24px;background:#fff;border:1px solid #dde3de}.form-section-title{margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid #e4e8e4;font-size:13px;font-weight:900}.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.field{position:relative}.field.full{grid-column:1/-1}.field label{display:block;margin-bottom:6px;color:#5d6b6d;font-size:10px;font-weight:700}.field input,.field select{width:100%;height:38px;padding:0 10px;border:1px solid #ccd5cf;background:#fff;color:#374648;font-size:11px}.field.target input{border:2px solid var(--teal);box-shadow:0 0 0 4px rgba(13,118,110,.1)}
+    .generate{position:relative;margin-top:22px;padding:10px 15px;border:0;background:var(--teal);color:#fff;font-size:11px;font-weight:800}.generate.target{box-shadow:0 0 0 4px rgba(13,118,110,.12)}
+    .pin{position:absolute;z-index:6;display:grid;place-items:center;width:24px;height:24px;border:3px solid #fff;border-radius:50%;background:var(--teal);color:#fff;box-shadow:0 5px 15px rgba(16,45,50,.25);font-size:10px;font-weight:900;cursor:pointer}.field .pin{right:-11px;top:20px}.generate .pin{right:-13px;top:-12px}.pin.active{background:var(--coral);transform:scale(1.08)}
+    .element-note{position:absolute;top:92px;right:34px;width:255px;background:#fff;border:1px solid #ccd8d1;box-shadow:0 16px 44px rgba(16,45,50,.15)}
+    .element-note::before{content:"";position:absolute;top:78px;left:-54px;width:54px;border-top:1px solid var(--teal)}
+    .element-note::after{content:"";position:absolute;top:74px;left:-58px;width:8px;height:8px;border-radius:50%;background:var(--teal)}
+    .element-note .note-index{display:inline-grid;place-items:center;width:36px;height:36px;background:var(--teal);color:#fff;font-size:13px;font-weight:900}.note-top{display:flex;align-items:center;gap:10px;padding:12px 14px 0}.note-top strong{font-size:12px}.element-note p{margin:12px 14px;color:#5e6d6f;font-size:11px;line-height:1.7}.element-note .note-link{display:block;padding:10px 14px;border-top:1px solid #e1e6e2;color:var(--teal);font-size:10px;font-weight:800}.anchor-status{margin:0 14px 12px;padding:6px 8px;background:#edf3e8;color:#52641f;font-size:9px}
+    .element-note.second{top:320px}.element-note.second::before{top:64px}.element-note.second::after{top:60px}
+    .element-note[hidden]{display:none}
+    .compare-line{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.compare-line div{padding:12px 14px;background:#fff;border:1px solid var(--line);font-size:11px;color:#657477}.compare-line strong{display:block;margin-bottom:3px;color:var(--ink)}
+    @media(max-width:980px){.intro{grid-template-columns:1fr}.legend{width:max-content}.content-layout,.admin-layout{grid-template-columns:1fr}.catalog,.admin-side{display:none}.product-grid{grid-template-columns:1fr}.coa-form{width:100%;padding-bottom:210px}.element-note{top:auto;right:34px;bottom:26px;left:34px;width:auto}.element-note::before,.element-note::after{display:none}.element-note.second{top:auto}.site{min-height:760px}}
+    @media(max-width:640px){.page-shell{width:calc(100% - 20px);margin-top:16px}.intro{gap:14px}h1{font-size:25px}.legend{display:none}.case-heading{align-items:flex-start;gap:8px}.case-heading p{max-width:190px;text-align:right}.browser-top{display:none}.site-header{padding:0 14px}.site-links{display:none}.product-page,.form-page{padding:18px 14px}.findbar{right:14px}.product-grid{margin-top:56px}.annotation-pop{position:fixed!important;right:10px!important;bottom:12px!important;left:10px!important;top:auto!important;width:auto}.field-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.coa-form{padding:18px 16px 210px}.element-note{right:14px;left:14px}.compare-line{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <section class="intro">
+      <div>
+        <div class="brand"><img src="../extension/assets/pagecue-logo-1024.png" alt="页知" />页知 · 批注展现验证</div>
+        <h1>两个案例，对应两种不同的批注入口</h1>
+        <p>案例一把批注绑定在命中的文字上；案例二把批注绑定在页面字段或按钮上。请直接点击页面里的高亮词或编号圆点体验。</p>
+      </div>
+      <div class="legend"><span><i></i>关键词批注</span><span><i class="pin"></i>元素批注</span></div>
+    </section>
+
+    <nav class="demo-switch" aria-label="切换批注案例">
+      <button class="active" data-case="keyword-case">案例一：关键词就地批注</button>
+      <button data-case="element-case">案例二：页面元素批注</button>
+    </nav>
+
+    <section class="case active" id="keyword-case">
+      <div class="case-heading">
+        <div><span class="case-no">01</span><h2>文字就是批注入口</h2></div>
+        <p>适合风险词、用途限制、流程要求</p>
+      </div>
+      <div class="browser">
+        <div class="browser-top"><div class="lights"><i></i><i></i><i></i></div><div class="tab">产品详情｜示例页面</div></div>
+        <div class="address-row"><span class="browser-nav">‹ › ↻</span><span class="address">https://example.com/product/123-45-6</span></div>
+        <div class="site">
+          <header class="site-header"><div class="site-logo"><span>CHEM</span> MARKET</div><div class="site-links"><span>产品</span><span>供应商</span><span>询盘</span></div><span class="site-user">销售工作台</span></header>
+          <div class="content-layout">
+            <aside class="catalog"><strong>产品目录</strong><span class="selected">基础化学品</span><span>医药中间体</span><span>生物试剂</span><span>分析标准品</span></aside>
+            <article class="product-page">
+              <div class="findbar"><strong>危险化学品</strong><span data-find-count>1 / 3</span><button data-find="prev" aria-label="上一处">↑</button><button data-find="next" aria-label="下一处">↓</button><button class="close-find" data-find="close" aria-label="关闭">×</button></div>
+              <div class="breadcrumb">产品中心 / 基础化学品 / 产品详情</div>
+              <h2 class="product-title">示例化学品 A</h2><div class="cas">CAS 123-45-6</div>
+              <div class="product-grid">
+                <section class="copy-panel">
+                  <h3>产品说明</h3>
+                  <p>本产品属于<span class="keyword active" tabindex="0" data-term="危险化学品" data-title="危险化学品操作要求">危险化学品<span class="count">2</span></span>，报价前应确认客户资质及目标用途。运输方式需根据产品属性单独确认。</p>
+                  <p>当前资料标注为<span class="keyword" tabindex="0" data-term="仅供科研使用" data-title="用途限制提醒">仅供科研使用</span>，不得直接用于人体、临床诊断或食品生产。</p>
+                  <p>若客户需要大包装，请先完成<span class="keyword" tabindex="0" data-term="合规审核" data-title="合规审核流程">合规审核</span>，再向供应商确认交付周期。</p>
+                  <div class="properties"><span>纯度</span><span>≥98%</span><span>包装</span><span>500g / 25kg</span><span>存储条件</span><span>阴凉、通风处保存</span></div>
+                </section>
+                <aside class="quote-box"><strong>询价与库存</strong><small>登录后查看供应商报价</small><button>立即询价</button></aside>
+              </div>
+              <aside class="annotation-pop show" role="dialog" aria-label="关键词批注">
+                <div class="annotation-head"><span class="annotation-level">风险提醒 · 组织批注</span><button class="x" aria-label="关闭批注">×</button></div>
+                <h4 data-pop-title>危险化学品操作要求</h4>
+                <p data-pop-body>报价前请核验客户资质、运输条件和目标用途，不要直接承诺普通快递运输。</p>
+                <div class="why" data-pop-why>命中关键词：危险化学品 · 页面组：产品详情页</div>
+                <div class="annotation-actions"><button>稍后提醒</button><button class="primary">查看处理 SOP</button></div>
+              </aside>
+            </article>
+          </div>
+        </div>
+      </div>
+      <div class="case-note"><strong>这种方式的含义：</strong>用户阅读页面时直接看到需要注意的原文；点击原文后，批注在附近展开，不必先打开侧栏。</div>
+    </section>
+
+    <section class="case" id="element-case">
+      <div class="case-heading">
+        <div><span class="case-no">02</span><h2>字段和按钮旁出现编号锚点</h2></div>
+        <p>适合填写说明、操作指导和页面流程</p>
+      </div>
+      <div class="browser">
+        <div class="browser-top"><div class="lights"><i></i><i></i><i></i></div><div class="tab">COA 生成器｜示例页面</div></div>
+        <div class="address-row"><span class="browser-nav">‹ › ↻</span><span class="address">https://coa.example.com/create</span></div>
+        <div class="site">
+          <header class="site-header"><div class="site-logo"><span>COA</span> GENERATOR</div><div class="site-links"><span>新建 COA</span><span>生成记录</span><span>模板管理</span></div><span class="site-user">管理员</span></header>
+          <div class="admin-layout">
+            <aside class="admin-side"><div class="admin-brand">质量文件中心</div><span class="active">新建 COA</span><span>生成记录</span><span>产品信息</span><span>模板设置</span></aside>
+            <section class="form-page">
+              <div class="form-toolbar"><h3>新建 COA</h3><div class="mode-switch"><i></i>批注已开启 · 2处</div></div>
+              <form class="coa-form">
+                <div class="form-section-title">基础信息</div>
+                <div class="field-grid">
+                  <div class="field"><label>产品名称</label><input value="示例化学品 A" readonly /></div>
+                  <div class="field"><label>CAS号</label><input value="123-45-6" readonly /></div>
+                  <div class="field target"><label>批次号</label><input value="HT20260717001" readonly /><button type="button" class="pin active" data-note="note-one" aria-label="查看批次号批注">1</button></div>
+                  <div class="field"><label>检测日期</label><input value="2026-07-17" readonly /></div>
+                  <div class="field full"><label>模板</label><select><option>企业标准 COA</option></select></div>
+                </div>
+                <button class="generate target" type="button">生成 COA<button type="button" class="pin" data-note="note-two" aria-label="查看生成按钮批注">2</button></button>
+              </form>
+
+              <aside class="element-note" id="note-one">
+                <div class="note-top"><span class="note-index">1</span><strong>批次号填写规则</strong></div>
+                <p>请填写供应商原始批次号，不要填写内部订单号。系统会将该内容直接写入 COA。</p>
+                <div class="anchor-status">定位正常 · 绑定字段「批次号」</div>
+                <span class="note-link">查看正确示例</span>
+              </aside>
+              <aside class="element-note second" id="note-two" hidden>
+                <div class="note-top"><span class="note-index">2</span><strong>生成前最终确认</strong></div>
+                <p>生成前请再次核对产品名称、CAS号、批次号和检测日期。生成后仍可撤回，但会保留操作记录。</p>
+                <div class="anchor-status">定位正常 · 绑定按钮「生成 COA」</div>
+                <span class="note-link">查看生成规范</span>
+              </aside>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div class="compare-line"><div><strong>查看模式</strong>成员看到编号圆点，点击后阅读说明。</div><div><strong>管理员标注模式</strong>管理员点击页面元素即可创建或调整批注锚点。</div></div>
+    </section>
+  </main>
+  <script>
+    const caseButtons=[...document.querySelectorAll('[data-case]')];
+    caseButtons.forEach(button=>button.addEventListener('click',()=>{
+      caseButtons.forEach(item=>item.classList.toggle('active',item===button));
+      document.querySelectorAll('.case').forEach(item=>item.classList.toggle('active',item.id===button.dataset.case));
+    }));
+
+    const annotationCopy={
+      '危险化学品':{title:'危险化学品操作要求',body:'报价前请核验客户资质、运输条件和目标用途，不要直接承诺普通快递运输。',level:'风险提醒 · 组织批注'},
+      '仅供科研使用':{title:'用途限制提醒',body:'对外回复时请保留“仅供科研使用”的限制说明，不得用于人体、临床诊断或食品用途。',level:'注意事项 · 组织批注'},
+      '合规审核':{title:'合规审核流程',body:'请先完成客户主体和目标用途核验，再向供应商确认大包装价格及交付周期。',level:'流程说明 · 组织批注'}
+    };
+    const keywords=[...document.querySelectorAll('.keyword')];
+    const pop=document.querySelector('.annotation-pop');
+    let activeKeyword=0;
+    function openKeyword(index){
+      activeKeyword=(index+keywords.length)%keywords.length;
+      keywords.forEach((item,i)=>item.classList.toggle('active',i===activeKeyword));
+      const target=keywords[activeKeyword],copy=annotationCopy[target.dataset.term];
+      document.querySelector('[data-pop-title]').textContent=copy.title;
+      document.querySelector('[data-pop-body]').textContent=copy.body;
+      document.querySelector('.annotation-level').textContent=copy.level;
+      document.querySelector('[data-pop-why]').textContent=`命中关键词：${target.dataset.term} · 页面组：产品详情页`;
+      document.querySelector('[data-find-count]').textContent=`${activeKeyword+1} / ${keywords.length}`;
+      document.querySelector('.findbar strong').textContent=target.dataset.term;
+      const page=document.querySelector('.product-page'),pageBox=page.getBoundingClientRect(),box=target.getBoundingClientRect();
+      pop.style.left=`${Math.min(Math.max(20,box.left-pageBox.left-35),page.clientWidth-365)}px`;
+      pop.style.top=`${box.bottom-pageBox.top+14}px`;
+      pop.classList.add('show');
+    }
+    keywords.forEach((item,index)=>{
+      item.addEventListener('click',()=>openKeyword(index));
+      item.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openKeyword(index)}});
+    });
+    document.querySelector('[data-find="prev"]').addEventListener('click',()=>openKeyword(activeKeyword-1));
+    document.querySelector('[data-find="next"]').addEventListener('click',()=>openKeyword(activeKeyword+1));
+    document.querySelector('[data-find="close"]').addEventListener('click',()=>pop.classList.remove('show'));
+    document.querySelector('.annotation-pop .x').addEventListener('click',()=>pop.classList.remove('show'));
+
+    const pins=[...document.querySelectorAll('.pin[data-note]')];
+    pins.forEach(pin=>pin.addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();
+      pins.forEach(item=>item.classList.toggle('active',item===pin));
+      document.querySelectorAll('.element-note').forEach(note=>note.hidden=note.id!==pin.dataset.note);
+    }));
+    const requestedCase=new URLSearchParams(window.location.search).get('case');
+    if(requestedCase){
+      const requestedButton=caseButtons.find(button=>button.dataset.case===requestedCase);
+      requestedButton?.click();
+    }
+    requestAnimationFrame(()=>openKeyword(0));
+  </script>
+</body>
+</html>

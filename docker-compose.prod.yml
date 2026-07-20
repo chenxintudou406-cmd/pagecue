@@ -1,0 +1,24 @@
+name: pagecue
+
+services:
+  pagecue:
+    image: ${PAGECUE_IMAGE:-pagecue:3.1.2}
+    build: .
+    container_name: pagecue
+    restart: unless-stopped
+    env_file:
+      - /opt/pagecue/.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      CONTEXT_COMPANION_DATA: /app/data/db.json
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - /opt/pagecue/data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
