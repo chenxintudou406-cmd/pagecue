@@ -387,6 +387,16 @@ function workbuddyDateTime(value) {
   }).format(new Date(value)).replaceAll("/", "-");
 }
 
+function addOneCalendarMonth(value) {
+  const date = new Date(value);
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCMonth(date.getUTCMonth() + 1);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
+  return date.toISOString();
+}
+
 function workbuddyReminderResult(db, requestRecord, status = requestRecord.status) {
   const memo = db.memos.find(item => item.id === requestRecord.memoId);
   if (!memo) return {
@@ -401,7 +411,7 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
   const pageGroupNames = names(memo.rule.pageGroupIds || [], db.pageGroups);
   const targetGroupNames = names(memo.targetGroupIds || [], db.groups);
   const targetUserNames = names(memo.targetUserIds || [], db.users);
-  const intensityName = { light: "轻度", medium: "中度", heavy: "重度" }[memo.intensity] || "中度";
+  const intensityName = { light: "轻度", medium: "中度", heavy: "重度" }[memo.intensity] || "轻度";
   const pageScopeName = memo.rule.pageScope === "page_groups" ? `页面组：${pageGroupNames.join("、")}` : "全局页面";
   const targetName = targetGroupNames.length || targetUserNames.length
     ? [...targetGroupNames.map(name => `组“${name}”`), ...targetUserNames.map(name => `成员“${name}”`)].join("、")
@@ -1037,11 +1047,11 @@ async function handleApi(req, res, url) {
     const targetGroupIds = resolveWorkbuddyReferences(body.targetGroups, db.groups, "成员组");
     const targetUserIds = resolveWorkbuddyReferences(body.targetUsers, db.users.filter(user => user.status !== "disabled"), "成员");
     if (!targetGroupIds.length && !targetUserIds.length) defaultsApplied.push("投放对象=全员");
-    const intensity = ["light", "medium", "heavy"].includes(body.intensity) ? body.intensity : "medium";
-    if (!body.intensity) defaultsApplied.push("强度=中度");
+    const intensity = ["light", "medium", "heavy"].includes(body.intensity) ? body.intensity : "light";
+    if (!body.intensity) defaultsApplied.push("强度=轻度");
     const template = intensity === "heavy" ? "strong" : intensity === "light" ? "light" : "standard";
-    const keywordOperator = body.keywordOperator === "OR" ? "OR" : "AND";
-    if (!body.keywordOperator) defaultsApplied.push("关键词关系=AND");
+    const keywordOperator = body.keywordOperator === "AND" ? "AND" : "OR";
+    if (!body.keywordOperator) defaultsApplied.push("关键词关系=OR");
     if (!body.cooldownMinutes) defaultsApplied.push("冷却时间=30分钟");
     let startsAt = body.startsAt || null;
     let expiresAt = body.expiresAt || null;
@@ -1051,8 +1061,8 @@ async function handleApi(req, res, url) {
         defaultsApplied.push("开始时间=立即生效");
       }
       if (!expiresAt) {
-        expiresAt = new Date(Date.parse(startsAt) + 7 * 24 * 60 * 60_000).toISOString();
-        defaultsApplied.push("结束时间=7天后");
+        expiresAt = addOneCalendarMonth(startsAt);
+        defaultsApplied.push("结束时间=1个月后");
       }
     }
     const memo = cleanMemo({

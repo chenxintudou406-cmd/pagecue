@@ -294,9 +294,14 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   const defaultOperation = await defaultOperationResponse.json();
   assert.equal(defaultOperation.reminder.type, "operation");
   assert.equal(defaultOperation.reminder.title, "pending quote操作提醒");
+  assert.equal(defaultOperation.reminder.intensity, "light");
+  assert.match(defaultOperation.message, /关键词：pending quote（OR）/);
   assert.ok(Date.parse(defaultOperation.reminder.startsAt) <= Date.now());
-  assert.ok(Math.abs(Date.parse(defaultOperation.reminder.expiresAt) - Date.parse(defaultOperation.reminder.startsAt) - 7 * 24 * 60 * 60_000) < 1000);
-  assert.ok(defaultOperation.defaultsApplied.includes("结束时间=7天后"));
+  const defaultDurationDays = (Date.parse(defaultOperation.reminder.expiresAt) - Date.parse(defaultOperation.reminder.startsAt)) / (24 * 60 * 60_000);
+  assert.ok(defaultDurationDays >= 28 && defaultDurationDays <= 31);
+  assert.ok(defaultOperation.defaultsApplied.includes("强度=轻度"));
+  assert.ok(defaultOperation.defaultsApplied.includes("关键词关系=OR"));
+  assert.ok(defaultOperation.defaultsApplied.includes("结束时间=1个月后"));
   assert.match(defaultOperation.message, /采用默认值：/);
   assert.match(defaultOperation.message, /有效期：.+ 至 .+/);
   const duplicateWorkbuddyCreate = await workbuddyFetch("/api/integrations/workbuddy/reminders", {

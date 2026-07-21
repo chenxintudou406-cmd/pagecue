@@ -37,15 +37,15 @@ node "C:\Users\44982\.workbuddy\skills\pagecue-reminder\scripts\submit-reminder.
 - 类型：知识提醒。
 - 标题：`第一个关键词 + 知识提醒/操作提醒`。
 - 正文：根据关键词自动生成一句知识说明或工作处理要求。
-- 强度：中度。
+- 强度：轻度。
 - 页面范围：全局页面。
-- 关键词关系：AND。
+- 关键词关系：OR。
 - 冷却时间：30分钟。
 - 投放对象：全员。
 - 链接：无。
 - 知识提醒有效期：长期有效，直到管理员删除。
 - 操作提醒开始时间：创建后立即生效。
-- 操作提醒结束时间：开始时间后7天；用户明确时间时以用户设置为准。
+- 操作提醒结束时间：开始时间后1个月；用户明确时间时以用户设置为准。
 
 ## JSON 字段
 
@@ -71,7 +71,7 @@ node "C:\Users\44982\.workbuddy\skills\pagecue-reminder\scripts\submit-reminder.
 - `intensity`: `light`、`medium` 或 `heavy`。
 - `pageScope`: `global` 或 `page_groups`；后者必须填写 `pageGroups`。
 - `targetGroups`、`targetUsers`、`pageGroups` 使用后台中的精确名称或 ID。
-- `startsAt` 和 `expiresAt` 使用 ISO 8601 格式；操作提醒未提供时由服务端自动设置“立即生效、7天后到期”。知识提醒也可按用户要求设置有效期，未提供则长期有效。
+- `startsAt` 和 `expiresAt` 使用 ISO 8601 格式；操作提醒未提供时由服务端自动设置“立即生效、1个月后到期”。知识提醒也可按用户要求设置有效期，未提供则长期有效。
 - 同一请求重试会返回 `duplicate`，不会重复创建。
 
 ## 检查连接与查询
