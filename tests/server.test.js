@@ -228,13 +228,14 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   const vapidKeys = webPush.generateVAPIDKeys();
   const adminPhone = "13000000000";
   const adminPassword = "test-only-password";
+  const workbuddyToken = "test-workbuddy-token-at-least-32-characters";
   const port = await new Promise((resolve, reject) => {
     const probe = net.createServer();
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", () => { const value = probe.address().port; probe.close(() => resolve(value)); });
   });
   const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, PORT: String(port), CONTEXT_COMPANION_DATA: dataFile, VAPID_PUBLIC_KEY: vapidKeys.publicKey, VAPID_PRIVATE_KEY: vapidKeys.privateKey, VAPID_SUBJECT: "mailto:test@example.com", ADMIN_PHONE: adminPhone, ADMIN_PASSWORD_HASH: testPasswordHash(adminPassword), ADMIN_SESSION_SECRET: randomBytes(32).toString("base64url") },
+    env: { ...process.env, PORT: String(port), CONTEXT_COMPANION_DATA: dataFile, VAPID_PUBLIC_KEY: vapidKeys.publicKey, VAPID_PRIVATE_KEY: vapidKeys.privateKey, VAPID_SUBJECT: "mailto:test@example.com", ADMIN_PHONE: adminPhone, ADMIN_PASSWORD_HASH: testPasswordHash(adminPassword), ADMIN_SESSION_SECRET: randomBytes(32).toString("base64url"), WORKBUDDY_API_TOKEN: workbuddyToken },
     stdio: "ignore"
   });
   t.after(() => { child.kill(); fs.rmSync(tempDir, { recursive: true, force: true }); });
@@ -243,6 +244,47 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
     try { if ((await fetch(`${base}/api/health`)).ok) break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 50));
   }
+  const unauthorizedWorkbuddy = await fetch(`${base}/api/integrations/workbuddy/health`);
+  assert.equal(unauthorizedWorkbuddy.status, 401);
+  const workbuddyFetch = (pathname, options = {}) => fetch(`${base}${pathname}`, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${workbuddyToken}` } });
+  const workbuddyHealth = await workbuddyFetch("/api/integrations/workbuddy/health");
+  assert.equal(workbuddyHealth.status, 200);
+  assert.equal((await workbuddyHealth.json()).status, "ready");
+  const workbuddyRequestId = "wecom-message-20260721-001";
+  const workbuddyCreate = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestId: workbuddyRequestId,
+      submittedBy: "@Chen",
+      type: "knowledge",
+      title: "WeCom knowledge reminder",
+      body: "Read the linked SOP before quoting.",
+      keywords: ["chloroacetic acid", "79-11-8"],
+      keywordOperator: "OR",
+      intensity: "medium",
+      targetGroups: ["group_sales"],
+      links: ["https://example.com/sop"]
+    })
+  });
+  assert.equal(workbuddyCreate.status, 201);
+  const workbuddyCreated = await workbuddyCreate.json();
+  assert.equal(workbuddyCreated.status, "created");
+  assert.equal(workbuddyCreated.reminder.type, "knowledge");
+  assert.deepEqual(workbuddyCreated.reminder.keywords, ["chloroacetic acid", "79-11-8"]);
+  assert.deepEqual(workbuddyCreated.reminder.targetGroups, ["销售组"]);
+  assert.match(workbuddyCreated.message, /提醒 ID/);
+  const duplicateWorkbuddyCreate = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestId: workbuddyRequestId, title: "Should not be created", keywords: ["duplicate"] })
+  });
+  assert.equal(duplicateWorkbuddyCreate.status, 200);
+  const duplicateWorkbuddyResult = await duplicateWorkbuddyCreate.json();
+  assert.equal(duplicateWorkbuddyResult.status, "duplicate");
+  assert.equal(duplicateWorkbuddyResult.reminder.id, workbuddyCreated.reminder.id);
+  const queriedWorkbuddyResult = await (await workbuddyFetch(`/api/integrations/workbuddy/requests/${encodeURIComponent(workbuddyRequestId)}`)).json();
+  assert.equal(queriedWorkbuddyResult.reminder.id, workbuddyCreated.reminder.id);
   const loginResponse = await fetch(`${base}/api/admin/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: adminPhone, password: adminPassword }) });
   assert.equal(loginResponse.status, 200);
   const adminCookie = loginResponse.headers.get("set-cookie").split(";")[0];

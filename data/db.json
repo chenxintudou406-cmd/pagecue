@@ -134,5 +134,6 @@
   "personalAlarms": [],
   "invitations": [],
   "deviceBindings": [],
-  "accountEvents": []
+  "accountEvents": [],
+  "integrationRequests": []
 }

@@ -69,6 +69,16 @@ The server runs as the `pagecue` Docker Compose project and stores mutable data 
 
 Database writes use an atomic replace operation. Time-based safety copies are retained under `/opt/pagecue/data/backups` before mutations so an interrupted write or accidental content change can be recovered without replacing the active database.
 
+## WorkBuddy / WeCom inbound reminders
+
+The lightweight integration under [`integrations/workbuddy`](./integrations/workbuddy) lets a WorkBuddy assistant convert an @mention in WeCom into an organization knowledge or operation reminder. It uses a dedicated bearer token, an idempotent request ID, exact page-group/member-group/member resolution, and a Chinese result message that the assistant can return directly to the conversation.
+
+- `GET /api/integrations/workbuddy/health`: verify authentication and service readiness.
+- `POST /api/integrations/workbuddy/reminders`: create and push a reminder.
+- `GET /api/integrations/workbuddy/requests/:requestId`: query a previous result.
+
+Configure `WORKBUDDY_API_TOKEN` on the server and keep the matching token only in WorkBuddy's local credential file. A name parsed from an @mention is stored for audit context but is not treated as an authenticated PageCue user identity.
+
 ## Demo data
 
 Local demo data is stored in [`data/db.json`](./data/db.json).
@@ -86,7 +96,7 @@ Page matching runs locally in the browser. The server receives rule identifiers,
 
 - Supports regular DOM text and same-origin dynamic SPA content.
 - Does not inspect browser-internal pages, the Chrome Web Store, canvas content, image text, or cross-origin iframes.
-- V3.0 does not include personal alarms, semantic AI matching, scheduled page-change monitoring, mobile browsers, Safari, OCR, enterprise WeCom delivery, or third-party knowledge-base connectors.
+- V3.0 does not include personal alarms, semantic AI matching, scheduled page-change monitoring, mobile browsers, Safari, OCR, native outbound WeCom delivery, or third-party knowledge-base connectors. WorkBuddy can submit inbound WeCom requests through the dedicated API above.
 
 ## Development
 

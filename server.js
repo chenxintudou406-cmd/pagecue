@@ -29,6 +29,9 @@ const ADMIN_PASSWORD_HASH = String(process.env.ADMIN_PASSWORD_HASH || "").trim()
 const ADMIN_SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || randomBytes(32).toString("base64url"));
 const ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60;
 const ADMIN_COOKIE = "pagecue_admin";
+const WORKBUDDY_API_TOKEN = String(process.env.WORKBUDDY_API_TOKEN || "").trim();
+const WORKBUDDY_ACTOR_ID = "integration_workbuddy";
+const WORKBUDDY_API_VERSION = "1";
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const LOGIN_MAX_FAILURES = 5;
 const loginFailures = new Map();
@@ -62,6 +65,7 @@ function readDb() {
   if (!Array.isArray(db.invitations)) db.invitations = [];
   if (!Array.isArray(db.deviceBindings)) db.deviceBindings = [];
   if (!Array.isArray(db.accountEvents)) db.accountEvents = [];
+  if (!Array.isArray(db.integrationRequests)) db.integrationRequests = [];
   if (!Array.isArray(db.users)) db.users = [];
   db.users = db.users.map(user => ({ ...user, groupIds: Array.isArray(user.groupIds) ? user.groupIds : [], status: user.status || "active" }));
   ensureSupplierTriggerMemos(db);
@@ -270,13 +274,14 @@ function loginBlocked(req) {
   return Boolean(entry && Date.now() - entry.startedAt <= LOGIN_WINDOW_MS && entry.count >= LOGIN_MAX_FAILURES);
 }
 
-function appendAudit(db, { action, entityType, entityId, userId }) {
+function appendAudit(db, { action, entityType, entityId, userId, detail = null }) {
   db.auditLog.push({
     id: `audit_${randomUUID()}`,
     action,
     entityType,
     entityId,
     userId,
+    detail,
     createdAt: new Date().toISOString()
   });
 }
@@ -328,6 +333,82 @@ function parseBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+function requireWorkbuddy(req) {
+  if (!WORKBUDDY_API_TOKEN) {
+    const error = new Error("WorkBuddy 接口尚未配置");
+    error.statusCode = 503;
+    throw error;
+  }
+  const header = String(req.headers.authorization || "");
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  const expected = createHash("sha256").update(WORKBUDDY_API_TOKEN).digest();
+  const actual = createHash("sha256").update(token).digest();
+  if (!token || !timingSafeEqual(expected, actual)) {
+    const error = new Error("WorkBuddy 接口密钥无效");
+    error.statusCode = 401;
+    throw error;
+  }
+}
+
+function workbuddyStrings(value, limit = 50) {
+  const items = Array.isArray(value) ? value : (typeof value === "string" ? value.split(/[\n,，]/) : []);
+  return [...new Set(items.map(item => String(item || "").trim()).filter(Boolean))].slice(0, limit);
+}
+
+function resolveWorkbuddyReferences(values, collection, label) {
+  return workbuddyStrings(values, 100).map(reference => {
+    const exactId = collection.find(item => item.id === reference);
+    if (exactId) return exactId.id;
+    const matches = collection.filter(item => String(item.name || "").trim().toLocaleLowerCase() === reference.toLocaleLowerCase());
+    if (matches.length === 1) return matches[0].id;
+    const error = new Error(matches.length ? `${label}“${reference}”存在重名，请改用 ID` : `找不到${label}“${reference}”`);
+    error.statusCode = 400;
+    throw error;
+  });
+}
+
+function workbuddyLinks(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(link => typeof link === "string" ? { label: "查看具体信息", url: link } : link);
+}
+
+function workbuddyReminderResult(db, requestRecord, status = requestRecord.status) {
+  const memo = db.memos.find(item => item.id === requestRecord.memoId);
+  if (!memo) return {
+    ok: false,
+    status: "deleted",
+    requestId: requestRecord.requestId,
+    reminderId: requestRecord.memoId,
+    message: `提醒 ${requestRecord.memoId} 已被删除`
+  };
+  const names = (ids, collection) => ids.map(id => collection.find(item => item.id === id)?.name || id);
+  const typeName = memo.type === "operation" ? "操作提醒" : "知识提醒";
+  const push = requestRecord.push || { configured: PUSH_CONFIGURED, targetCount: 0, acceptedCount: 0, fallbackMinutes: SYNC_CHECK_INTERVAL_MINUTES };
+  const pushText = push.configured
+    ? `已向 ${push.acceptedCount}/${push.targetCount} 台在线设备提交推送`
+    : `已保存，插件将在 ${SYNC_CHECK_INTERVAL_MINUTES} 分钟内兜底同步`;
+  return {
+    ok: true,
+    status,
+    requestId: requestRecord.requestId,
+    reminder: {
+      id: memo.id,
+      type: memo.type,
+      title: memo.title,
+      intensity: memo.intensity,
+      keywords: memo.rule.includeTerms,
+      pageScope: memo.rule.pageScope,
+      pageGroups: names(memo.rule.pageGroupIds || [], db.pageGroups),
+      targetGroups: names(memo.targetGroupIds || [], db.groups),
+      targetUsers: names(memo.targetUserIds || [], db.users),
+      startsAt: memo.startsAt,
+      expiresAt: memo.expiresAt
+    },
+    push,
+    message: `${status === "duplicate" ? "该请求已处理，无需重复创建。" : "创建成功。"}${typeName}“${memo.title}”，关键词：${memo.rule.includeTerms.join("、")}；${pushText}。提醒 ID：${memo.id}`
+  };
 }
 
 function isActive(item, now = Date.now()) {
@@ -874,6 +955,111 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/health") {
     return send(res, 200, { ok: true, version: db.meta.version, appVersion: packageJson.version, pushConfigured: PUSH_CONFIGURED, time: new Date().toISOString() });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/integrations/workbuddy/health") {
+    requireWorkbuddy(req);
+    return send(res, 200, {
+      ok: true,
+      status: "ready",
+      service: "pagecue-workbuddy",
+      apiVersion: WORKBUDDY_API_VERSION,
+      appVersion: packageJson.version,
+      pushConfigured: PUSH_CONFIGURED,
+      message: "页知提醒接口连接正常"
+    });
+  }
+
+  const workbuddyRequestMatch = url.pathname.match(/^\/api\/integrations\/workbuddy\/requests\/([^/]+)$/);
+  if (req.method === "GET" && workbuddyRequestMatch) {
+    requireWorkbuddy(req);
+    const requestId = decodeURIComponent(workbuddyRequestMatch[1]);
+    const requestRecord = db.integrationRequests.find(item => item.channel === "workbuddy-wecom" && item.requestId === requestId);
+    if (!requestRecord) return send(res, 404, { ok: false, status: "not_found", requestId, message: "没有找到该提交记录" });
+    return send(res, 200, workbuddyReminderResult(db, requestRecord));
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/integrations/workbuddy/reminders") {
+    requireWorkbuddy(req);
+    const body = await parseBody(req);
+    const requestId = String(body.requestId || "").trim().slice(0, 160);
+    if (requestId.length < 8) return send(res, 400, { ok: false, status: "validation_failed", message: "requestId 至少需要 8 个字符，用于防止重复创建" });
+    const existingRequest = db.integrationRequests.find(item => item.channel === "workbuddy-wecom" && item.requestId === requestId);
+    if (existingRequest) return send(res, 200, workbuddyReminderResult(db, existingRequest, "duplicate"));
+
+    const keywords = workbuddyStrings(body.keywords);
+    if (!keywords.length) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "至少需要填写一个匹配关键词" });
+    const pageScope = body.pageScope === "page_groups" ? "page_groups" : "global";
+    const pageGroupIds = pageScope === "page_groups" ? resolveWorkbuddyReferences(body.pageGroups, db.pageGroups, "页面组") : [];
+    if (pageScope === "page_groups" && !pageGroupIds.length) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "选择特定页面组时，pageGroups 不能为空" });
+    const targetGroupIds = resolveWorkbuddyReferences(body.targetGroups, db.groups, "成员组");
+    const targetUserIds = resolveWorkbuddyReferences(body.targetUsers, db.users.filter(user => user.status !== "disabled"), "成员");
+    const intensity = ["light", "medium", "heavy"].includes(body.intensity) ? body.intensity : "medium";
+    const template = intensity === "heavy" ? "strong" : intensity === "light" ? "light" : "standard";
+    const memo = cleanMemo({
+      scope: "organization",
+      type: body.type === "operation" ? "operation" : "knowledge",
+      title: String(body.title || "企业微信提交的提醒").trim(),
+      body: String(body.body || "").trim(),
+      tags: [...workbuddyStrings(body.tags, 19), "WorkBuddy"],
+      links: workbuddyLinks(body.links),
+      targetGroupIds,
+      targetUserIds,
+      startsAt: body.startsAt || null,
+      expiresAt: body.expiresAt || null,
+      priority: intensity === "heavy" ? "important" : "normal",
+      annotation: { template, keywordTerms: keywords, anchors: [] },
+      status: "published",
+      rule: {
+        pageScope,
+        pageGroupIds,
+        includeTerms: keywords,
+        excludeTerms: workbuddyStrings(body.excludeKeywords),
+        operator: body.keywordOperator === "OR" ? "OR" : "AND",
+        caseSensitive: false,
+        useRegex: false,
+        cooldownMinutes: Number(body.cooldownMinutes || 30)
+      }
+    }, {}, WORKBUDDY_ACTOR_ID);
+    memo.integration = {
+      channel: "workbuddy-wecom",
+      requestId,
+      submittedBy: String(body.submittedBy || "企业微信用户").trim().slice(0, 120)
+    };
+    const requestRecord = {
+      id: `integration_request_${randomUUID()}`,
+      channel: "workbuddy-wecom",
+      requestId,
+      memoId: memo.id,
+      status: "created",
+      submittedBy: memo.integration.submittedBy,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      push: null
+    };
+    db.memos.push(memo);
+    db.integrationRequests.push(requestRecord);
+    if (db.integrationRequests.length > 5000) db.integrationRequests.splice(0, db.integrationRequests.length - 5000);
+    appendAudit(db, {
+      action: "created_via_workbuddy",
+      entityType: "memo",
+      entityId: memo.id,
+      userId: WORKBUDDY_ACTOR_ID,
+      detail: { requestId, submittedBy: memo.integration.submittedBy }
+    });
+    db.meta.version += 1;
+    writeDb(db);
+    const delivery = await dispatchPush(db, { type: "sync", memoId: memo.id, targetGroupIds, targetUserIds });
+    requestRecord.push = {
+      configured: delivery.configured,
+      targetCount: delivery.targetCount,
+      acceptedCount: delivery.acceptedCount,
+      failedCount: delivery.failedCount,
+      fallbackMinutes: SYNC_CHECK_INTERVAL_MINUTES
+    };
+    requestRecord.updatedAt = new Date().toISOString();
+    writeDb(db);
+    return send(res, 201, workbuddyReminderResult(db, requestRecord));
   }
 
   if (req.method === "POST" && url.pathname === "/api/admin/auth/login") {
@@ -1584,6 +1770,13 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     const statusCode = Number(error.statusCode) || 500;
     if (statusCode >= 500) console.error(error);
+    if (url.pathname.startsWith("/api/integrations/workbuddy/")) {
+      return send(res, statusCode, {
+        ok: false,
+        status: statusCode === 401 ? "unauthorized" : statusCode === 503 ? "not_configured" : statusCode < 500 ? "validation_failed" : "server_error",
+        message: error.message || "页知服务暂时不可用"
+      });
+    }
     return send(res, statusCode, { error: error.message || "服务器错误" });
   }
 });
