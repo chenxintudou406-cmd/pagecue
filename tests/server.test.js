@@ -274,8 +274,10 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(workbuddyCreated.reminder.type, "knowledge");
   assert.deepEqual(workbuddyCreated.reminder.keywords, ["chloroacetic acid", "79-11-8"]);
   assert.deepEqual(workbuddyCreated.reminder.targetGroups, ["销售组"]);
+  assert.equal(workbuddyCreated.reminder.expiresAt, null);
   assert.match(workbuddyCreated.message, /提醒 ID/);
   assert.match(workbuddyCreated.message, /提交人：Zhang San/);
+  assert.match(workbuddyCreated.message, /有效期：长期有效/);
   const missingSubmitterResponse = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -283,6 +285,20 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   });
   assert.equal(missingSubmitterResponse.status, 400);
   assert.match((await missingSubmitterResponse.json()).message, /提交人姓名/);
+  const defaultOperationResponse = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestId: "wecom-message-operation-defaults", submittedBy: "Li Si", type: "operation", keywords: ["pending quote"] })
+  });
+  assert.equal(defaultOperationResponse.status, 201);
+  const defaultOperation = await defaultOperationResponse.json();
+  assert.equal(defaultOperation.reminder.type, "operation");
+  assert.equal(defaultOperation.reminder.title, "pending quote操作提醒");
+  assert.ok(Date.parse(defaultOperation.reminder.startsAt) <= Date.now());
+  assert.ok(Math.abs(Date.parse(defaultOperation.reminder.expiresAt) - Date.parse(defaultOperation.reminder.startsAt) - 7 * 24 * 60 * 60_000) < 1000);
+  assert.ok(defaultOperation.defaultsApplied.includes("结束时间=7天后"));
+  assert.match(defaultOperation.message, /采用默认值：/);
+  assert.match(defaultOperation.message, /有效期：.+ 至 .+/);
   const duplicateWorkbuddyCreate = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

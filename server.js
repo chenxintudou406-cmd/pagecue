@@ -374,6 +374,19 @@ function workbuddyLinks(value) {
   return value.map(link => typeof link === "string" ? { label: "查看具体信息", url: link } : link);
 }
 
+function workbuddyDateTime(value) {
+  if (!value || !Number.isFinite(Date.parse(value))) return "未设置";
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).format(new Date(value)).replaceAll("/", "-");
+}
+
 function workbuddyReminderResult(db, requestRecord, status = requestRecord.status) {
   const memo = db.memos.find(item => item.id === requestRecord.memoId);
   if (!memo) return {
@@ -385,6 +398,18 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
   };
   const names = (ids, collection) => ids.map(id => collection.find(item => item.id === id)?.name || id);
   const typeName = memo.type === "operation" ? "操作提醒" : "知识提醒";
+  const pageGroupNames = names(memo.rule.pageGroupIds || [], db.pageGroups);
+  const targetGroupNames = names(memo.targetGroupIds || [], db.groups);
+  const targetUserNames = names(memo.targetUserIds || [], db.users);
+  const intensityName = { light: "轻度", medium: "中度", heavy: "重度" }[memo.intensity] || "中度";
+  const pageScopeName = memo.rule.pageScope === "page_groups" ? `页面组：${pageGroupNames.join("、")}` : "全局页面";
+  const targetName = targetGroupNames.length || targetUserNames.length
+    ? [...targetGroupNames.map(name => `组“${name}”`), ...targetUserNames.map(name => `成员“${name}”`)].join("、")
+    : "全员";
+  const validity = memo.startsAt || memo.expiresAt
+    ? `${memo.startsAt ? workbuddyDateTime(memo.startsAt) : "立即生效"} 至 ${memo.expiresAt ? workbuddyDateTime(memo.expiresAt) : "长期有效"}`
+    : "长期有效（直到删除）";
+  const defaultsText = requestRecord.defaultsApplied?.length ? requestRecord.defaultsApplied.join("、") : "无";
   const push = requestRecord.push || { configured: PUSH_CONFIGURED, targetCount: 0, acceptedCount: 0, fallbackMinutes: SYNC_CHECK_INTERVAL_MINUTES };
   const pushText = push.configured
     ? `已向 ${push.acceptedCount}/${push.targetCount} 台在线设备提交推送`
@@ -398,17 +423,21 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
       id: memo.id,
       type: memo.type,
       title: memo.title,
+      body: memo.body,
       intensity: memo.intensity,
       keywords: memo.rule.includeTerms,
       pageScope: memo.rule.pageScope,
-      pageGroups: names(memo.rule.pageGroupIds || [], db.pageGroups),
-      targetGroups: names(memo.targetGroupIds || [], db.groups),
-      targetUsers: names(memo.targetUserIds || [], db.users),
+      pageGroups: pageGroupNames,
+      targetGroups: targetGroupNames,
+      targetUsers: targetUserNames,
+      links: memo.links,
+      cooldownMinutes: memo.rule.cooldownMinutes,
       startsAt: memo.startsAt,
       expiresAt: memo.expiresAt
     },
+    defaultsApplied: requestRecord.defaultsApplied || [],
     push,
-    message: `${status === "duplicate" ? "该请求已处理，无需重复创建。" : "创建成功。"}${typeName}“${memo.title}”，提交人：${requestRecord.submittedBy}，关键词：${memo.rule.includeTerms.join("、")}；${pushText}。提醒 ID：${memo.id}`
+    message: `${status === "duplicate" ? "该请求已处理，无需重复创建。" : "创建成功。"}\n类型：${typeName}\n标题：${memo.title}\n提交人：${requestRecord.submittedBy}\n关键词：${memo.rule.includeTerms.join("、")}（${memo.rule.operator}）\n强度：${intensityName}\n页面范围：${pageScopeName}\n投放对象：${targetName}\n有效期：${validity}\n冷却时间：${memo.rule.cooldownMinutes} 分钟\n链接：${memo.links.length} 个\n采用默认值：${defaultsText}\n同步状态：${pushText}\n提醒 ID：${memo.id}`
   };
 }
 
@@ -988,28 +1017,55 @@ async function handleApi(req, res, url) {
     const existingRequest = db.integrationRequests.find(item => item.channel === "workbuddy-wecom" && item.requestId === requestId);
     if (existingRequest) return send(res, 200, workbuddyReminderResult(db, existingRequest, "duplicate"));
 
+    const defaultsApplied = [];
     const submittedBy = String(body.submittedBy || "").trim().replace(/^@+/, "").trim().slice(0, 120);
     if (!submittedBy) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "请说明本条提醒的提交人姓名" });
     const keywords = workbuddyStrings(body.keywords);
     if (!keywords.length) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "至少需要填写一个匹配关键词" });
+    const type = body.type === "operation" ? "operation" : "knowledge";
+    if (!body.type) defaultsApplied.push("类型=知识提醒");
+    const title = String(body.title || "").trim() || `${keywords[0]}${type === "operation" ? "操作" : "知识"}提醒`;
+    if (!String(body.title || "").trim()) defaultsApplied.push(`标题=${title}`);
+    const memoBody = String(body.body || "").trim() || (type === "operation"
+      ? `请按要求处理与“${keywords.join("、")}”相关的工作事项。`
+      : `请查看与“${keywords.join("、")}”相关的知识信息。`);
+    if (!String(body.body || "").trim()) defaultsApplied.push("正文=自动生成");
     const pageScope = body.pageScope === "page_groups" ? "page_groups" : "global";
+    if (!body.pageScope) defaultsApplied.push("页面范围=全局页面");
     const pageGroupIds = pageScope === "page_groups" ? resolveWorkbuddyReferences(body.pageGroups, db.pageGroups, "页面组") : [];
     if (pageScope === "page_groups" && !pageGroupIds.length) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "选择特定页面组时，pageGroups 不能为空" });
     const targetGroupIds = resolveWorkbuddyReferences(body.targetGroups, db.groups, "成员组");
     const targetUserIds = resolveWorkbuddyReferences(body.targetUsers, db.users.filter(user => user.status !== "disabled"), "成员");
+    if (!targetGroupIds.length && !targetUserIds.length) defaultsApplied.push("投放对象=全员");
     const intensity = ["light", "medium", "heavy"].includes(body.intensity) ? body.intensity : "medium";
+    if (!body.intensity) defaultsApplied.push("强度=中度");
     const template = intensity === "heavy" ? "strong" : intensity === "light" ? "light" : "standard";
+    const keywordOperator = body.keywordOperator === "OR" ? "OR" : "AND";
+    if (!body.keywordOperator) defaultsApplied.push("关键词关系=AND");
+    if (!body.cooldownMinutes) defaultsApplied.push("冷却时间=30分钟");
+    let startsAt = body.startsAt || null;
+    let expiresAt = body.expiresAt || null;
+    if (type === "operation") {
+      if (!startsAt) {
+        startsAt = new Date().toISOString();
+        defaultsApplied.push("开始时间=立即生效");
+      }
+      if (!expiresAt) {
+        expiresAt = new Date(Date.parse(startsAt) + 7 * 24 * 60 * 60_000).toISOString();
+        defaultsApplied.push("结束时间=7天后");
+      }
+    }
     const memo = cleanMemo({
       scope: "organization",
-      type: body.type === "operation" ? "operation" : "knowledge",
-      title: String(body.title || "企业微信提交的提醒").trim(),
-      body: String(body.body || "").trim(),
+      type,
+      title,
+      body: memoBody,
       tags: [...workbuddyStrings(body.tags, 19), "WorkBuddy"],
       links: workbuddyLinks(body.links),
       targetGroupIds,
       targetUserIds,
-      startsAt: body.startsAt || null,
-      expiresAt: body.expiresAt || null,
+      startsAt,
+      expiresAt,
       priority: intensity === "heavy" ? "important" : "normal",
       annotation: { template, keywordTerms: keywords, anchors: [] },
       status: "published",
@@ -1018,7 +1074,7 @@ async function handleApi(req, res, url) {
         pageGroupIds,
         includeTerms: keywords,
         excludeTerms: workbuddyStrings(body.excludeKeywords),
-        operator: body.keywordOperator === "OR" ? "OR" : "AND",
+        operator: keywordOperator,
         caseSensitive: false,
         useRegex: false,
         cooldownMinutes: Number(body.cooldownMinutes || 30)
@@ -1036,6 +1092,7 @@ async function handleApi(req, res, url) {
       memoId: memo.id,
       status: "created",
       submittedBy: memo.integration.submittedBy,
+      defaultsApplied,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       push: null

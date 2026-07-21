@@ -79,6 +79,8 @@ The lightweight integration under [`integrations/workbuddy`](./integrations/work
 
 Configure `WORKBUDDY_API_TOKEN` on the server and keep the matching token only in WorkBuddy's local credential file. A name parsed from an @mention is stored for audit context but is not treated as an authenticated PageCue user identity.
 
+For WorkBuddy submissions, only one submitter name and at least one keyword are always required. Other fields use documented defaults: knowledge reminders are permanent, while operation reminders start immediately and expire after seven days unless the message specifies another period. Every successful response lists the final values and the defaults that were applied.
+
 ## Demo data
 
 Local demo data is stored in [`data/db.json`](./data/db.json).
