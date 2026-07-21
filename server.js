@@ -374,19 +374,6 @@ function workbuddyLinks(value) {
   return value.map(link => typeof link === "string" ? { label: "查看具体信息", url: link } : link);
 }
 
-function workbuddyDateTime(value) {
-  if (!value || !Number.isFinite(Date.parse(value))) return "未设置";
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23"
-  }).format(new Date(value)).replaceAll("/", "-");
-}
-
 function addOneCalendarMonth(value) {
   const date = new Date(value);
   const day = date.getUTCDate();
@@ -412,18 +399,7 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
   const targetGroupNames = names(memo.targetGroupIds || [], db.groups);
   const targetUserNames = names(memo.targetUserIds || [], db.users);
   const intensityName = { light: "轻度", medium: "中度", heavy: "重度" }[memo.intensity] || "轻度";
-  const pageScopeName = memo.rule.pageScope === "page_groups" ? `页面组：${pageGroupNames.join("、")}` : "全局页面";
-  const targetName = targetGroupNames.length || targetUserNames.length
-    ? [...targetGroupNames.map(name => `组“${name}”`), ...targetUserNames.map(name => `成员“${name}”`)].join("、")
-    : "全员";
-  const validity = memo.startsAt || memo.expiresAt
-    ? `${memo.startsAt ? workbuddyDateTime(memo.startsAt) : "立即生效"} 至 ${memo.expiresAt ? workbuddyDateTime(memo.expiresAt) : "长期有效"}`
-    : "长期有效（直到删除）";
-  const defaultsText = requestRecord.defaultsApplied?.length ? requestRecord.defaultsApplied.join("、") : "无";
   const push = requestRecord.push || { configured: PUSH_CONFIGURED, targetCount: 0, acceptedCount: 0, fallbackMinutes: SYNC_CHECK_INTERVAL_MINUTES };
-  const pushText = push.configured
-    ? `已向 ${push.acceptedCount}/${push.targetCount} 台在线设备提交推送`
-    : `已保存，插件将在 ${SYNC_CHECK_INTERVAL_MINUTES} 分钟内兜底同步`;
   return {
     ok: true,
     status,
@@ -447,7 +423,7 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
     },
     defaultsApplied: requestRecord.defaultsApplied || [],
     push,
-    message: `${status === "duplicate" ? "该请求已处理，无需重复创建。" : "创建成功。"}\n类型：${typeName}\n标题：${memo.title}\n提交人：${requestRecord.submittedBy}\n关键词：${memo.rule.includeTerms.join("、")}（${memo.rule.operator}）\n强度：${intensityName}\n页面范围：${pageScopeName}\n投放对象：${targetName}\n有效期：${validity}\n冷却时间：${memo.rule.cooldownMinutes} 分钟\n链接：${memo.links.length} 个\n采用默认值：${defaultsText}\n同步状态：${pushText}\n提醒 ID：${memo.id}`
+    message: `${status === "duplicate" ? "该请求已处理，无需重复创建" : "创建成功"}\n提醒类型：${typeName}\n标题：${memo.title}\n提交人：${requestRecord.submittedBy}\n关键词：${memo.rule.includeTerms.join("、")}（${memo.rule.operator}）\n强度：${intensityName}`
   };
 }
 

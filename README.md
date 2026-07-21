@@ -79,7 +79,7 @@ The lightweight integration under [`integrations/workbuddy`](./integrations/work
 
 Configure `WORKBUDDY_API_TOKEN` on the server and keep the matching token only in WorkBuddy's local credential file. A name parsed from an @mention is stored for audit context but is not treated as an authenticated PageCue user identity.
 
-For WorkBuddy submissions, only one submitter name and at least one keyword are always required. Other fields use documented defaults, including light intensity and OR keyword matching: knowledge reminders are permanent, while operation reminders start immediately and expire after one calendar month unless the message specifies another period. Every successful response lists the final values and the defaults that were applied.
+For WorkBuddy submissions, only one submitter name and at least one keyword are always required. Other fields use documented defaults, including light intensity and OR keyword matching: knowledge reminders are permanent, while operation reminders start immediately and expire after one calendar month unless the message specifies another period. Successful chat replies stay compact and include only the reminder type, title, submitter, keywords with AND/OR, and intensity.
 
 ## Demo data
 

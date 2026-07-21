@@ -275,9 +275,11 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.deepEqual(workbuddyCreated.reminder.keywords, ["chloroacetic acid", "79-11-8"]);
   assert.deepEqual(workbuddyCreated.reminder.targetGroups, ["销售组"]);
   assert.equal(workbuddyCreated.reminder.expiresAt, null);
-  assert.match(workbuddyCreated.message, /提醒 ID/);
+  assert.match(workbuddyCreated.message, /^创建成功\n提醒类型：知识提醒/);
   assert.match(workbuddyCreated.message, /提交人：Zhang San/);
-  assert.match(workbuddyCreated.message, /有效期：长期有效/);
+  assert.match(workbuddyCreated.message, /关键词：chloroacetic acid、79-11-8（OR）/);
+  assert.match(workbuddyCreated.message, /强度：中度$/);
+  assert.doesNotMatch(workbuddyCreated.message, /页面范围|投放对象|有效期|同步状态|提醒 ID/);
   const missingSubmitterResponse = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -302,8 +304,8 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.ok(defaultOperation.defaultsApplied.includes("强度=轻度"));
   assert.ok(defaultOperation.defaultsApplied.includes("关键词关系=OR"));
   assert.ok(defaultOperation.defaultsApplied.includes("结束时间=1个月后"));
-  assert.match(defaultOperation.message, /采用默认值：/);
-  assert.match(defaultOperation.message, /有效期：.+ 至 .+/);
+  assert.match(defaultOperation.message, /^创建成功\n提醒类型：操作提醒/);
+  assert.match(defaultOperation.message, /强度：轻度$/);
   const duplicateWorkbuddyCreate = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
