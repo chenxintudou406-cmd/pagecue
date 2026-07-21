@@ -393,6 +393,7 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
     ok: true,
     status,
     requestId: requestRecord.requestId,
+    submittedBy: requestRecord.submittedBy,
     reminder: {
       id: memo.id,
       type: memo.type,
@@ -407,7 +408,7 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
       expiresAt: memo.expiresAt
     },
     push,
-    message: `${status === "duplicate" ? "该请求已处理，无需重复创建。" : "创建成功。"}${typeName}“${memo.title}”，关键词：${memo.rule.includeTerms.join("、")}；${pushText}。提醒 ID：${memo.id}`
+    message: `${status === "duplicate" ? "该请求已处理，无需重复创建。" : "创建成功。"}${typeName}“${memo.title}”，提交人：${requestRecord.submittedBy}，关键词：${memo.rule.includeTerms.join("、")}；${pushText}。提醒 ID：${memo.id}`
   };
 }
 
@@ -987,6 +988,8 @@ async function handleApi(req, res, url) {
     const existingRequest = db.integrationRequests.find(item => item.channel === "workbuddy-wecom" && item.requestId === requestId);
     if (existingRequest) return send(res, 200, workbuddyReminderResult(db, existingRequest, "duplicate"));
 
+    const submittedBy = String(body.submittedBy || "").trim().replace(/^@+/, "").trim().slice(0, 120);
+    if (!submittedBy) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "请说明本条提醒的提交人姓名" });
     const keywords = workbuddyStrings(body.keywords);
     if (!keywords.length) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "至少需要填写一个匹配关键词" });
     const pageScope = body.pageScope === "page_groups" ? "page_groups" : "global";
@@ -1024,7 +1027,7 @@ async function handleApi(req, res, url) {
     memo.integration = {
       channel: "workbuddy-wecom",
       requestId,
-      submittedBy: String(body.submittedBy || "企业微信用户").trim().slice(0, 120)
+      submittedBy
     };
     const requestRecord = {
       id: `integration_request_${randomUUID()}`,

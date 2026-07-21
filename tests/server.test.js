@@ -256,7 +256,7 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       requestId: workbuddyRequestId,
-      submittedBy: "@Chen",
+      submittedBy: "@Zhang San",
       type: "knowledge",
       title: "WeCom knowledge reminder",
       body: "Read the linked SOP before quoting.",
@@ -270,10 +270,19 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(workbuddyCreate.status, 201);
   const workbuddyCreated = await workbuddyCreate.json();
   assert.equal(workbuddyCreated.status, "created");
+  assert.equal(workbuddyCreated.submittedBy, "Zhang San");
   assert.equal(workbuddyCreated.reminder.type, "knowledge");
   assert.deepEqual(workbuddyCreated.reminder.keywords, ["chloroacetic acid", "79-11-8"]);
   assert.deepEqual(workbuddyCreated.reminder.targetGroups, ["销售组"]);
   assert.match(workbuddyCreated.message, /提醒 ID/);
+  assert.match(workbuddyCreated.message, /提交人：Zhang San/);
+  const missingSubmitterResponse = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestId: "wecom-message-missing-submitter", title: "Missing submitter", keywords: ["test"] })
+  });
+  assert.equal(missingSubmitterResponse.status, 400);
+  assert.match((await missingSubmitterResponse.json()).message, /提交人姓名/);
   const duplicateWorkbuddyCreate = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

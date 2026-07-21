@@ -71,7 +71,7 @@ Database writes use an atomic replace operation. Time-based safety copies are re
 
 ## WorkBuddy / WeCom inbound reminders
 
-The lightweight integration under [`integrations/workbuddy`](./integrations/workbuddy) lets a WorkBuddy assistant convert an @mention in WeCom into an organization knowledge or operation reminder. It uses a dedicated bearer token, an idempotent request ID, exact page-group/member-group/member resolution, and a Chinese result message that the assistant can return directly to the conversation.
+The lightweight integration under [`integrations/workbuddy`](./integrations/workbuddy) lets a WorkBuddy assistant convert an @mention in WeCom into an organization knowledge or operation reminder. Each message must explicitly name one submitter; the API stores and returns that business attribution instead of assuming the current chat participant. It uses a dedicated bearer token, an idempotent request ID, exact page-group/member-group/member resolution, and a Chinese result message that the assistant can return directly to the conversation.
 
 - `GET /api/integrations/workbuddy/health`: verify authentication and service readiness.
 - `POST /api/integrations/workbuddy/reminders`: create and push a reminder.
