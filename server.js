@@ -374,6 +374,18 @@ function workbuddyLinks(value) {
   return value.map(link => typeof link === "string" ? { label: "查看具体信息", url: link } : link);
 }
 
+function workbuddyDateTime(value) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).format(new Date(value)).replaceAll("/", "-");
+}
+
 function addOneCalendarMonth(value) {
   const date = new Date(value);
   const day = date.getUTCDate();
@@ -400,6 +412,11 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
   const targetUserNames = names(memo.targetUserIds || [], db.users);
   const intensityName = { light: "轻度", medium: "中度", heavy: "重度" }[memo.intensity] || "轻度";
   const push = requestRecord.push || { configured: PUSH_CONFIGURED, targetCount: 0, acceptedCount: 0, fallbackMinutes: SYNC_CHECK_INTERVAL_MINUTES };
+  const heading = status === "duplicate" ? "该请求已处理，无需重复创建" : "创建成功";
+  const compactFields = `标题：${memo.title}\n提交人：${requestRecord.submittedBy}\n关键词：${memo.rule.includeTerms.join("、")}（${memo.rule.operator}）\n强度：${intensityName}`;
+  const message = memo.type === "operation"
+    ? `${heading}\n${compactFields}\n有效期：${workbuddyDateTime(memo.startsAt)} 至 ${workbuddyDateTime(memo.expiresAt)}`
+    : `${heading}\n提醒类型：${typeName}\n${compactFields}`;
   return {
     ok: true,
     status,
@@ -423,7 +440,7 @@ function workbuddyReminderResult(db, requestRecord, status = requestRecord.statu
     },
     defaultsApplied: requestRecord.defaultsApplied || [],
     push,
-    message: `${status === "duplicate" ? "该请求已处理，无需重复创建" : "创建成功"}\n提醒类型：${typeName}\n标题：${memo.title}\n提交人：${requestRecord.submittedBy}\n关键词：${memo.rule.includeTerms.join("、")}（${memo.rule.operator}）\n强度：${intensityName}`
+    message
   };
 }
 

@@ -304,8 +304,9 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.ok(defaultOperation.defaultsApplied.includes("强度=轻度"));
   assert.ok(defaultOperation.defaultsApplied.includes("关键词关系=OR"));
   assert.ok(defaultOperation.defaultsApplied.includes("结束时间=1个月后"));
-  assert.match(defaultOperation.message, /^创建成功\n提醒类型：操作提醒/);
-  assert.match(defaultOperation.message, /强度：轻度$/);
+  assert.match(defaultOperation.message, /^创建成功\n标题：pending quote操作提醒/);
+  assert.doesNotMatch(defaultOperation.message, /提醒类型/);
+  assert.match(defaultOperation.message, /强度：轻度\n有效期：.+ 至 .+$/);
   const duplicateWorkbuddyCreate = await workbuddyFetch("/api/integrations/workbuddy/reminders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
