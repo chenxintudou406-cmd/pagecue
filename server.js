@@ -2342,6 +2342,68 @@ async function handleApi(req, res, url) {
     return send(res, 200, memo);
   }
 
+  if (req.method === "POST" && url.pathname === "/api/admin/memos/bulk") {
+    const actorId = requestActor(req);
+    const actorName = db.users.find(user => user.id === actorId)?.name || actorId;
+    const body = await parseBody(req);
+    const memoIds = [...new Set(Array.isArray(body.memoIds) ? body.memoIds.map(id => String(id || "").trim()).filter(Boolean) : [])].slice(0, 500);
+    if (!memoIds.length) return send(res, 400, { error: "请至少选择一条提醒" });
+    const memos = memoIds.map(id => db.memos.find(item => item.id === id && !item.systemGeneratedSupplier));
+    if (memos.some(item => !item)) return send(res, 404, { error: "部分提醒不存在或不可批量管理，请刷新后重试" });
+    const now = new Date().toISOString();
+    const changed = [];
+
+    if (body.action === "archive") {
+      for (const memo of memos) {
+        if (memo.status === "archived") continue;
+        memo.status = "archived";
+        memo.version = Number(memo.version || 0) + 1;
+        memo.updatedBy = actorId;
+        memo.updatedAt = now;
+        appendSubmissionSnapshot(db, memo, { entityType: "memo", actorMemberId: actorId, actorName, source: "admin-bulk" });
+        appendAudit(db, { action: "archived", entityType: "memo", entityId: memo.id, userId: actorId, detail: { source: "bulk" } });
+        changed.push(memo);
+      }
+    } else if (body.action === "move") {
+      if (memos.some(memo => memo.scope === "personal")) {
+        return send(res, 400, { error: "个人提醒由系统自动归类，不能移动到组织文件夹" });
+      }
+      const folderId = String(body.folderId || "").trim().slice(0, 120) || null;
+      if (folderId && !db.memoFolders.some(folder => folder.id === folderId && folder.status !== "archived" && folder.scope !== "personal")) {
+        return send(res, 400, { error: "选择的提醒文件夹不存在" });
+      }
+      for (const memo of memos) {
+        const previousFolderId = memo.folderId || null;
+        if (previousFolderId === folderId) continue;
+        memo.folderId = folderId;
+        memo.version = Number(memo.version || 0) + 1;
+        memo.updatedBy = actorId;
+        memo.updatedAt = now;
+        appendSubmissionSnapshot(db, memo, { entityType: "memo", actorMemberId: actorId, actorName, source: "admin-bulk" });
+        appendAudit(db, { action: "folder_changed", entityType: "memo", entityId: memo.id, userId: actorId, detail: { previousFolderId, folderId, source: "bulk" } });
+        changed.push(memo);
+      }
+    } else {
+      return send(res, 400, { error: "不支持的批量操作" });
+    }
+
+    if (changed.length) {
+      db.meta.version += 1;
+      writeDb(db);
+    }
+    const delivery = body.action === "archive" && changed.length
+      ? await dispatchPush(db, { type: "sync" })
+      : null;
+    return send(res, 200, {
+      ok: true,
+      action: body.action,
+      selectedCount: memos.length,
+      changedCount: changed.length,
+      memoIds: changed.map(memo => memo.id),
+      sync: delivery ? { targetCount: delivery.targetCount, acceptedCount: delivery.acceptedCount, failedCount: delivery.failedCount } : null
+    });
+  }
+
   const adminCollection = parts[2];
   const collectionMap = { memos: "memos", tools: "tools", "page-groups": "pageGroups", suppliers: "suppliers", "memo-folders": "memoFolders" };
   if (parts[0] === "api" && parts[1] === "admin" && Object.hasOwn(collectionMap, adminCollection)) {

@@ -412,6 +412,25 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(folderState.memoFolders.some(item => item.id === secondFolder.id), false);
   assert.equal(folderState.memos.find(item => item.id === folderMemo.id).folderId, null);
   assert.ok(folderState.auditLog.some(item => item.action === "folder_changed" && item.entityId === folderMemo.id));
+  const bulkFolderResponse = await adminFetch("/api/admin/memo-folders", { method: "POST", body: JSON.stringify({ name: "批量整理目标", sortOrder: 30 }) });
+  assert.equal(bulkFolderResponse.status, 201);
+  const bulkFolder = await bulkFolderResponse.json();
+  const bulkMemoA = await (await adminFetch("/api/admin/memos", { method: "POST", body: JSON.stringify({ title: "批量提醒 A", rule: { includeTerms: ["批量A"] } }) })).json();
+  const bulkMemoB = await (await adminFetch("/api/admin/memos", { method: "POST", body: JSON.stringify({ title: "批量提醒 B", rule: { includeTerms: ["批量B"] } }) })).json();
+  const bulkMoveResponse = await adminFetch("/api/admin/memos/bulk", { method: "POST", body: JSON.stringify({ action: "move", memoIds: [bulkMemoA.id, bulkMemoB.id], folderId: bulkFolder.id }) });
+  assert.equal(bulkMoveResponse.status, 200);
+  assert.equal((await bulkMoveResponse.json()).changedCount, 2);
+  const stateAfterBulkMove = await (await adminFetch("/api/admin/state")).json();
+  assert.equal(stateAfterBulkMove.memos.find(item => item.id === bulkMemoA.id).folderId, bulkFolder.id);
+  assert.equal(stateAfterBulkMove.memos.find(item => item.id === bulkMemoB.id).folderId, bulkFolder.id);
+  const bulkArchiveResponse = await adminFetch("/api/admin/memos/bulk", { method: "POST", body: JSON.stringify({ action: "archive", memoIds: [bulkMemoA.id, bulkMemoB.id] }) });
+  assert.equal(bulkArchiveResponse.status, 200);
+  assert.equal((await bulkArchiveResponse.json()).changedCount, 2);
+  const stateAfterBulkArchive = await (await adminFetch("/api/admin/state")).json();
+  assert.equal(stateAfterBulkArchive.memos.find(item => item.id === bulkMemoA.id).status, "archived");
+  assert.equal(stateAfterBulkArchive.memos.find(item => item.id === bulkMemoB.id).status, "archived");
+  assert.ok(stateAfterBulkArchive.auditLog.some(item => item.action === "archived" && item.entityId === bulkMemoA.id));
+  assert.equal((await adminFetch("/api/admin/memos/bulk", { method: "POST", body: JSON.stringify({ action: "unknown", memoIds: [bulkMemoA.id] }) })).status, 400);
   const invitationResponse = await adminFetch("/api/admin/invitations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "user_demo", validMinutes: 60 }) });
   assert.equal(invitationResponse.status, 201);
   const invitation = await invitationResponse.json();
@@ -563,6 +582,9 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   const created = await createdResponse.json();
   assert.equal(created.ownerId, "user_demo");
   assert.equal(created.folderId, "memo_folder_personal_knowledge");
+  const personalBulkMoveResponse = await adminFetch("/api/admin/memos/bulk", { method: "POST", body: JSON.stringify({ action: "move", memoIds: [created.id], folderId: bulkFolder.id }) });
+  assert.equal(personalBulkMoveResponse.status, 400);
+  assert.match((await personalBulkMoveResponse.json()).error, /个人提醒由系统自动归类/);
   const personalOperationResponse = await memberFetch(`/api/personal-memos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
     type: "operation",
     title: "个人操作测试",

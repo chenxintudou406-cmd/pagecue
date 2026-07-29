@@ -96,15 +96,24 @@ test("后台支持提醒类型、人员投放、多链接和成员邀请码管�
   for (const token of ["name=\"type\"", "name=\"targetUserIds\"", "name=\"links\"", "member-dialog", "invite-member", "data-operation-window"]) assert.match(html + app, new RegExp(token));
 });
 
-test("组织提醒只提供永久删除，不再保留撤回状态", () => {
+test("组织提醒保留永久删除，并增加可筛选的批量下架状态", () => {
   const html = read("admin/index.html");
   const app = read("admin/app.js");
   const server = read("server.js");
-  assert.doesNotMatch(html, /<option value="archived">已撤回<\/option>/);
+  assert.match(html, /<option value="archived">已下架<\/option>/);
+  assert.match(html, /id="memo-scope"/);
+  assert.match(html, /id="memo-bulk-bar"/);
+  assert.match(html, /id="memo-bulk-move"/);
+  assert.match(html, /id="memo-bulk-archive"/);
   assert.doesNotMatch(app, /确认撤回这条组织提醒|提醒已撤回/);
+  assert.match(app, /action: "archive"/);
+  assert.match(app, /action: "move"/);
+  assert.match(app, /已下架/);
   assert.match(app, /确认永久删除这条组织提醒/);
   assert.match(app, /组织提醒已删除/);
   assert.match(app, /icons\.trash/);
+  assert.match(server, /url\.pathname === "\/api\/admin\/memos\/bulk"/);
+  assert.match(server, /个人提醒由系统自动归类/);
   assert.match(server, /req\.method === "DELETE" && collection === "memos"/);
   assert.match(server, /db\[collection\]\.splice\(index, 1\)/);
   assert.match(server, /dispatchPush\(db, \{ type: "sync"/);
@@ -123,7 +132,9 @@ test("后台成员分组可新增和编辑", () => {
 
 test("后台个人提醒系统文件夹可查看但不可删除", () => {
   const app = read("admin/app.js");
+  const html = read("admin/index.html");
   assert.match(app, /folder\.systemManaged/);
-  assert.match(app, /selectedFolder\?\.scope === "personal"/);
+  assert.match(html, /<option value="personal">个人提醒<\/option>/);
+  assert.match(app, /scope === "personal"/);
   assert.match(app, /item\.scope === "personal"/);
 });

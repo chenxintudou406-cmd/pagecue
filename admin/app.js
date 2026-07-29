@@ -1,4 +1,4 @@
-const state = { data: null, view: "overview", editingMemo: null, editingMemoFolder: null, editingSupplier: null, editingTool: null, editingPageGroup: null, editingMember: null, editingGroup: null, selectedAccountId: null, strategyTestPoll: null, annotationSessionPoll: null };
+const state = { data: null, view: "overview", editingMemo: null, editingMemoFolder: null, editingSupplier: null, editingTool: null, editingPageGroup: null, editingMember: null, editingGroup: null, selectedAccountId: null, selectedMemoIds: new Set(), strategyTestPoll: null, annotationSessionPoll: null };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8787" : "";
@@ -205,6 +205,20 @@ function memoFolderSelectOptions(selected = "") {
   return `<option value="">未分组</option>${activeMemoFolders().filter(folder => folder.scope !== "personal").map(folder => `<option value="${escapeHtml(folder.id)}" ${folder.id === selected ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}`;
 }
 
+function memoFolderFilterOptions(scope = "organization", selected = "all") {
+  const folders = activeMemoFolders().filter(folder => scope === "all" || (scope === "personal" ? folder.scope === "personal" : folder.scope !== "personal"));
+  return `<option value="all">全部文件夹</option><option value="">未分组</option>${folders.map(folder => `<option value="${escapeHtml(folder.id)}" ${folder.id === selected ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}`;
+}
+
+function refreshMemoFolderFilter(selected = null) {
+  const filter = $("#memo-folder-filter");
+  if (!filter) return;
+  const scope = $("#memo-scope")?.value || "organization";
+  const previous = selected === null ? (filter.value || "all") : selected;
+  filter.innerHTML = memoFolderFilterOptions(scope, previous);
+  filter.value = [...filter.options].some(option => option.value === previous) ? previous : "all";
+}
+
 function renderMemoFolders() {
   if (!state.data) return;
   const folders = activeMemoFolders();
@@ -222,7 +236,7 @@ function renderMemoFolders() {
     { id: "all", name: "全部组织提醒", description: "查看所有管理员发布的组织提醒", system: true, count: managedMemos.filter(memo => memo.scope === "organization").length },
     { id: "", name: "未分组", description: "还没有归入文件夹的组织提醒", system: true, sortOrder: -1 },
     ...folders
-  ].map(folder => `<article class="memo-folder-card ${folder.system || folder.systemManaged ? "system" : ""}"><button class="memo-folder-open" type="button" data-open-memo-folder="${escapeHtml(folder.id)}"><span class="folder-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10H3V7Z" /></svg></span><span class="folder-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(folder.description || "暂无说明")}</small><b>${folder.count ?? counts.get(folder.id) ?? 0} 条提醒${folder.systemManaged ? " · 自动归类" : ""}</b></span><span class="folder-enter">查看提醒 →</span></button>${folder.system || folder.systemManaged ? "" : `<div class="card-actions"><button class="icon-button" title="编辑" aria-label="编辑 ${escapeHtml(folder.name)}" data-edit-memo-folder="${escapeHtml(folder.id)}">${icons.edit}</button><button class="icon-button danger" title="删除" aria-label="删除 ${escapeHtml(folder.name)}" data-delete-memo-folder="${escapeHtml(folder.id)}">${icons.trash}</button></div>`}</article>`).join("");
+  ].map(folder => `<article class="memo-folder-card ${folder.system || folder.systemManaged ? "system" : ""}"><button class="memo-folder-open" type="button" data-open-memo-folder="${escapeHtml(folder.id)}" data-memo-scope="${folder.scope === "personal" ? "personal" : "organization"}"><span class="folder-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10H3V7Z" /></svg></span><span class="folder-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(folder.description || "暂无说明")}</small><b>${folder.count ?? counts.get(folder.id) ?? 0} 条提醒${folder.systemManaged ? " · 自动归类" : ""}</b></span><span class="folder-enter">查看提醒 →</span></button>${folder.system || folder.systemManaged ? "" : `<div class="card-actions"><button class="icon-button" title="编辑" aria-label="编辑 ${escapeHtml(folder.name)}" data-edit-memo-folder="${escapeHtml(folder.id)}">${icons.edit}</button><button class="icon-button danger" title="删除" aria-label="删除 ${escapeHtml(folder.name)}" data-delete-memo-folder="${escapeHtml(folder.id)}">${icons.trash}</button></div>`}</article>`).join("");
 }
 
 function fillMemoFolderOptions(selected = "") {
@@ -231,29 +245,66 @@ function fillMemoFolderOptions(selected = "") {
   const options = memoFolderSelectOptions(selected);
   const memoSelect = $("#memo-form [name=folderId]");
   if (memoSelect) { memoSelect.innerHTML = options; memoSelect.value = selected || ""; }
-  const filter = $("#memo-folder-filter");
-  if (filter) {
-    const previous = filter.value || "all";
-    filter.innerHTML = `<option value="all">全部文件夹</option><option value="">未分组</option>${folders.map(folder => `<option value="${escapeHtml(folder.id)}">${escapeHtml(folder.name)}</option>`).join("")}`;
-    filter.value = [...filter.options].some(option => option.value === previous) ? previous : "all";
-  }
+  refreshMemoFolderFilter();
+  const bulkFolder = $("#memo-bulk-folder");
+  if (bulkFolder) bulkFolder.innerHTML = `<option value="">移动到未分组</option>${folders.filter(folder => folder.scope !== "personal").map(folder => `<option value="${escapeHtml(folder.id)}">移动到 ${escapeHtml(folder.name)}</option>`).join("")}`;
 }
 
-function renderMemos() {
+function memoStatusMatches(item, status) {
+  const expired = Boolean(item.expiresAt && Date.parse(item.expiresAt) <= Date.now());
+  if (status === "all") return true;
+  if (status === "archived") return item.status === "archived";
+  if (status === "expired") return item.status !== "archived" && expired;
+  return item.status === status && !expired;
+}
+
+function filteredMemos() {
   if (!state.data) return;
   const query = ($("#memo-search").value || "").toLowerCase();
   const status = $("#memo-status").value;
   const type = $("#memo-type").value;
+  const scope = $("#memo-scope")?.value || "organization";
   const folder = $("#memo-folder-filter")?.value ?? "all";
-  const selectedFolder = activeMemoFolders().find(item => item.id === folder);
-  const visibleScope = selectedFolder?.scope === "personal" ? "personal" : "organization";
-  const isExpired = item => Boolean(item.expiresAt && Date.parse(item.expiresAt) <= Date.now());
-  const statusMatches = item => status === "all" || (status === "expired" ? isExpired(item) : item.status === status && !isExpired(item));
-  const memos = state.data.memos.filter(item => item.scope === visibleScope && (type === "all" || item.type === type) && statusMatches(item) && (folder === "all" || (item.folderId || "") === folder) && `${item.title} ${item.body} ${(item.tags || []).join(" ")} ${memoFolderName(item.folderId)}`.toLowerCase().includes(query));
-  $("#memo-folder-current").textContent = folder === "all" ? "全部组织提醒" : memoFolderName(folder);
+  return state.data.memos.filter(item => (scope === "all" || item.scope === scope) && (type === "all" || item.type === type) && memoStatusMatches(item, status) && (folder === "all" || (item.folderId || "") === folder) && `${item.title} ${item.body} ${(item.tags || []).join(" ")} ${memoFolderName(item.folderId)}`.toLowerCase().includes(query));
+}
+
+function updateMemoBulkBar(memos) {
+  const bar = $("#memo-bulk-bar");
+  const selected = (state.data?.memos || []).filter(item => state.selectedMemoIds.has(item.id));
+  const visibleIds = memos.map(item => item.id);
+  const selectedVisible = visibleIds.filter(id => state.selectedMemoIds.has(id));
+  const selectAll = $("#memo-select-all");
+  bar.hidden = false;
+  selectAll.checked = Boolean(visibleIds.length && selectedVisible.length === visibleIds.length);
+  selectAll.indeterminate = Boolean(selectedVisible.length && selectedVisible.length < visibleIds.length);
+  $("#memo-selected-count").textContent = `已选 ${selected.length} 条`;
+  const hasPersonal = selected.some(item => item.scope === "personal");
+  const moveButton = $("#memo-bulk-move");
+  const moveFolder = $("#memo-bulk-folder");
+  moveButton.disabled = !selected.length || hasPersonal;
+  moveFolder.disabled = !selected.length || hasPersonal;
+  moveButton.title = hasPersonal ? "个人提醒由系统自动归类，不能移动到组织文件夹" : "";
+  $("#memo-bulk-archive").disabled = !selected.some(item => item.status !== "archived");
+  $("#memo-bulk-clear").disabled = !selected.length;
+}
+
+function clearMemoSelection(render = true) {
+  state.selectedMemoIds.clear();
+  if (render) renderMemos();
+}
+
+function renderMemos() {
+  if (!state.data) return;
+  const memos = filteredMemos();
+  const folder = $("#memo-folder-filter")?.value ?? "all";
+  const scope = $("#memo-scope")?.value || "organization";
+  const scopeLabel = scope === "personal" ? "全部个人提醒" : scope === "all" ? "全部提醒" : "全部组织提醒";
+  $("#memo-folder-current").textContent = folder === "all" ? scopeLabel : memoFolderName(folder);
   $("#memo-folder-current-count").textContent = `${memos.length} 条`;
   $("#memo-list").innerHTML = memos.length ? memos.map(item => {
     const personal = item.scope === "personal";
+    const selected = state.selectedMemoIds.has(item.id);
+    const isExpired = Boolean(item.expiresAt && Date.parse(item.expiresAt) <= Date.now());
     const ownerName = state.data.users.find(user => user.id === item.ownerId)?.name || item.ownerId || "未知成员";
     const audienceNames = personal
       ? `个人 · ${ownerName}`
@@ -265,12 +316,13 @@ function renderMemos() {
     const legacyArchived = item.status === "archived";
     const editAction = personal || legacyArchived ? "" : `<button class="icon-button" title="编辑" aria-label="编辑 ${escapeHtml(item.title)}" data-edit-memo="${item.id}">${icons.edit}</button>`;
     const supplier = (item.entityRefs || []).find(ref => ref.type === "supplier");
-    const lifecycle = isExpired(item) ? "已到期" : item.status === "published" ? "已发布" : item.status === "draft" ? "草稿" : "历史停用";
+    const lifecycle = item.status === "archived" ? "已下架" : isExpired ? "已到期" : item.status === "published" ? "已发布" : "草稿";
     const managementActions = personal
       ? `<span class="pill">成员个人内容 · 只读</span>`
       : `<label class="quick-folder-move"><span>移动到</span><select data-move-memo="${escapeHtml(item.id)}" aria-label="移动 ${escapeHtml(item.title)} 到文件夹">${memoFolderSelectOptions(item.folderId || "")}</select></label>${editAction}<button class="icon-button danger" title="删除" aria-label="删除 ${escapeHtml(item.title)}" data-delete-memo="${item.id}">${icons.trash}</button>`;
-    return `<article class="content-card"><div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(truncate(item.body.replace(/[*#`]/g, ""), 150))}</p><div class="content-meta"><span class="pill">${escapeHtml(memoFolderName(item.folderId))}</span><span class="pill ${isExpired(item) ? "important" : ""}">${lifecycle}</span><span class="pill">${item.triggerMode === "broadcast" ? "强提醒广播" : "页面匹配"}</span><span class="pill ${item.annotation?.template === "strong" ? "important" : ""}">${annotationTemplateLabel(item.annotation?.template)}</span>${supplier ? `<span class="pill supplier-pill">供应商 · ${escapeHtml(supplier.displayName || supplier.id)}</span>` : ""}<span class="pill">${item.annotation?.anchors?.length || 0} 个元素锚点</span><span class="pill">${item.triggerMode === "broadcast" ? "不依赖页面" : escapeHtml(pageScopeLabel(item.rule))}</span><span class="pill">${escapeHtml(audienceNames)}</span><span class="pill">${escapeHtml(item.rule.includeTerms.join(" / ") || "无关键词")}</span></div></div><div class="card-actions memo-card-actions">${managementActions}</div></article>`;
+    return `<article class="content-card memo-content-card ${selected ? "selected" : ""}"><label class="memo-row-select" aria-label="选择 ${escapeHtml(item.title)}"><input type="checkbox" data-select-memo="${escapeHtml(item.id)}" ${selected ? "checked" : ""} /></label><div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(truncate(item.body.replace(/[*#`]/g, ""), 150))}</p><div class="content-meta"><span class="pill">${personal ? "个人提醒" : "组织提醒"}</span><span class="pill">${escapeHtml(memoFolderName(item.folderId))}</span><span class="pill ${isExpired ? "important" : ""}">${lifecycle}</span><span class="pill">${item.triggerMode === "broadcast" ? "强提醒广播" : "页面匹配"}</span><span class="pill ${item.annotation?.template === "strong" ? "important" : ""}">${annotationTemplateLabel(item.annotation?.template)}</span>${supplier ? `<span class="pill supplier-pill">供应商 · ${escapeHtml(supplier.displayName || supplier.id)}</span>` : ""}<span class="pill">${item.annotation?.anchors?.length || 0} 个元素锚点</span><span class="pill">${item.triggerMode === "broadcast" ? "不依赖页面" : escapeHtml(pageScopeLabel(item.rule))}</span><span class="pill">${escapeHtml(audienceNames)}</span><span class="pill">${escapeHtml((item.rule?.includeTerms || []).join(" / ") || "无关键词")}</span></div></div><div class="card-actions memo-card-actions">${managementActions}</div></article>`;
   }).join("") : `<div class="empty">没有符合条件的提醒</div>`;
+  updateMemoBulkBar(memos);
 }
 
 function supplierEvaluationPreview(supplier) {
@@ -1000,10 +1052,40 @@ document.addEventListener("click", async event => {
   const editMemo = event.target.closest("[data-edit-memo]"); if (editMemo) openMemo(editMemo.dataset.editMemo);
   const openMemoFolderButton = event.target.closest("[data-open-memo-folder]"); if (openMemoFolderButton) {
     const folderId = openMemoFolderButton.dataset.openMemoFolder;
-    fillMemoFolderOptions();
-    $("#memo-folder-filter").value = folderId === "all" ? "all" : folderId;
+    $("#memo-scope").value = openMemoFolderButton.dataset.memoScope || "organization";
+    refreshMemoFolderFilter(folderId === "all" ? "all" : folderId);
+    clearMemoSelection(false);
     switchView("memos");
     renderMemos();
+  }
+  if (event.target.closest("#memo-bulk-clear")) clearMemoSelection();
+  const bulkMove = event.target.closest("#memo-bulk-move"); if (bulkMove) {
+    const memoIds = [...state.selectedMemoIds].filter(id => state.data?.memos?.some(item => item.id === id));
+    const folderId = $("#memo-bulk-folder").value || null;
+    const folderName = folderId ? memoFolderName(folderId) : "未分组";
+    if (memoIds.length && confirm(`确认将选中的 ${memoIds.length} 条组织提醒移动到“${folderName}”？`)) {
+      bulkMove.disabled = true;
+      try {
+        const result = await api("/api/admin/memos/bulk", { method: "POST", body: JSON.stringify({ action: "move", memoIds, folderId }) });
+        clearMemoSelection(false);
+        await load();
+        toast(`已移动 ${result.changedCount} 条提醒`);
+      } catch (error) { toast(error.message); }
+      finally { bulkMove.disabled = false; }
+    }
+  }
+  const bulkArchive = event.target.closest("#memo-bulk-archive"); if (bulkArchive) {
+    const memoIds = [...state.selectedMemoIds].filter(id => state.data?.memos?.some(item => item.id === id && item.status !== "archived"));
+    if (memoIds.length && confirm(`确认下架选中的 ${memoIds.length} 条提醒？下架后不再触发，正文、评论、反馈和历史记录都会保留。`)) {
+      bulkArchive.disabled = true;
+      try {
+        const result = await api("/api/admin/memos/bulk", { method: "POST", body: JSON.stringify({ action: "archive", memoIds }) });
+        clearMemoSelection(false);
+        await load();
+        toast(`已下架 ${result.changedCount} 条提醒`);
+      } catch (error) { toast(error.message); }
+      finally { bulkArchive.disabled = false; }
+    }
   }
   const editMemoFolder = event.target.closest("[data-edit-memo-folder]"); if (editMemoFolder) openMemoFolder(editMemoFolder.dataset.editMemoFolder);
   const editSupplier = event.target.closest("[data-edit-supplier]"); if (editSupplier) openSupplier(editSupplier.dataset.editSupplier);
@@ -1028,8 +1110,28 @@ document.addEventListener("click", async event => {
   const deletePageGroup = event.target.closest("[data-delete-page-group]"); if (deletePageGroup && confirm("确认删除这个页面组？")) { try { await api(`/api/admin/page-groups/${deletePageGroup.dataset.deletePageGroup}`, { method: "DELETE" }); toast("页面组已删除"); await load(); } catch (error) { toast(error.message); } }
   const close = event.target.closest("[data-close]"); if (close) { $(`#${close.dataset.close}`).close(); if (close.dataset.close === "account-detail-dialog") state.selectedAccountId = null; }
 });
-$("#memo-search").addEventListener("input", renderMemos); $("#memo-status").addEventListener("change", renderMemos); $("#memo-type").addEventListener("change", renderMemos); $("#memo-folder-filter").addEventListener("change", renderMemos);
+$("#memo-search").addEventListener("input", () => { clearMemoSelection(false); renderMemos(); });
+$("#memo-status").addEventListener("change", () => { clearMemoSelection(false); renderMemos(); });
+$("#memo-type").addEventListener("change", () => { clearMemoSelection(false); renderMemos(); });
+$("#memo-folder-filter").addEventListener("change", () => { clearMemoSelection(false); renderMemos(); });
+$("#memo-scope").addEventListener("change", () => { clearMemoSelection(false); refreshMemoFolderFilter("all"); renderMemos(); });
 document.addEventListener("change", async event => {
+  const rowSelection = event.target.closest("[data-select-memo]");
+  if (rowSelection) {
+    if (rowSelection.checked) state.selectedMemoIds.add(rowSelection.dataset.selectMemo);
+    else state.selectedMemoIds.delete(rowSelection.dataset.selectMemo);
+    renderMemos();
+    return;
+  }
+  if (event.target.closest("#memo-select-all")) {
+    const checked = $("#memo-select-all").checked;
+    for (const memo of filteredMemos()) {
+      if (checked) state.selectedMemoIds.add(memo.id);
+      else state.selectedMemoIds.delete(memo.id);
+    }
+    renderMemos();
+    return;
+  }
   const select = event.target.closest("[data-move-memo]");
   if (!select) return;
   const memoId = select.dataset.moveMemo;

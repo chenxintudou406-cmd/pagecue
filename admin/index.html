@@ -82,8 +82,18 @@
 
           <section id="view-memos" class="view" aria-labelledby="page-title">
             <div class="memo-context-bar"><div><span>当前查看</span><strong id="memo-folder-current">全部提醒</strong><small id="memo-folder-current-count">0 条</small></div><button class="button ghost" type="button" data-jump="memo-folders">管理文件夹</button></div>
-            <div class="toolbar"><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><span class="sr-only">搜索提醒</span><input id="memo-search" type="search" placeholder="搜索标题、正文或标签" /></label><label class="select-field"><span class="sr-only">筛选文件夹</span><select id="memo-folder-filter"><option value="all">全部文件夹</option></select></label><label class="select-field"><select id="memo-type"><option value="all">知识与操作</option><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label class="select-field"><span class="sr-only">筛选状态</span><select id="memo-status"><option value="all">全部状态</option><option value="published">已发布</option><option value="expired">已到期</option><option value="draft">草稿</option></select></label></div>
-            <div class="list-header" aria-hidden="true"><span>提醒内容</span><span>状态与范围</span><span>操作</span></div>
+            <div class="toolbar memo-toolbar"><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><span class="sr-only">搜索提醒</span><input id="memo-search" type="search" placeholder="搜索标题、正文或标签" /></label><label class="select-field"><span class="sr-only">筛选来源</span><select id="memo-scope"><option value="organization">组织提醒</option><option value="personal">个人提醒</option><option value="all">全部来源</option></select></label><label class="select-field"><span class="sr-only">筛选文件夹</span><select id="memo-folder-filter"><option value="all">全部文件夹</option></select></label><label class="select-field"><select id="memo-type"><option value="all">知识与操作</option><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label class="select-field"><span class="sr-only">筛选状态</span><select id="memo-status"><option value="all">全部状态</option><option value="published">已发布</option><option value="expired">已到期</option><option value="draft">草稿</option><option value="archived">已下架</option></select></label></div>
+            <div id="memo-bulk-bar" class="memo-bulk-bar" hidden>
+              <label class="memo-select-all"><input id="memo-select-all" type="checkbox" /><span>全选当前结果</span></label>
+              <strong id="memo-selected-count">已选 0 条</strong>
+              <div class="memo-bulk-actions">
+                <label class="select-field"><span class="sr-only">批量移动到文件夹</span><select id="memo-bulk-folder"><option value="">移动到未分组</option></select></label>
+                <button id="memo-bulk-move" class="button secondary" type="button">批量移动</button>
+                <button id="memo-bulk-archive" class="button danger" type="button">批量下架</button>
+                <button id="memo-bulk-clear" class="button ghost" type="button">取消选择</button>
+              </div>
+            </div>
+            <div class="list-header memo-list-header" aria-hidden="true"><span></span><span>提醒内容</span><span>状态与范围</span><span>操作</span></div>
             <div id="memo-list" class="content-list"></div>
             <section class="activity-section" aria-labelledby="memo-activity-title">
               <div class="section-toolbar"><div><h2 id="memo-activity-title">成员新增与反馈记录</h2><p>记录提醒创建者，以及成员的确认、忽略、稍后提醒和有用性反馈。</p></div></div>
