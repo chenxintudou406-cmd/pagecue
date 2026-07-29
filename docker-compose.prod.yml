@@ -2,7 +2,7 @@ name: pagecue
 
 services:
   pagecue:
-    image: ${PAGECUE_IMAGE:-pagecue:3.1.2}
+    image: ${PAGECUE_IMAGE:-pagecue:3.2.7-safe-input-create}
     build: .
     container_name: pagecue
     restart: unless-stopped

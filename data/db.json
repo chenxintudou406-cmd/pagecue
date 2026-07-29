@@ -21,8 +21,44 @@
     },
     {
       "id": "group_support",
-      "name": "客服组",
+      "name": "支持组",
       "memberCount": 1
+    },
+    {
+      "id": "group_procurement",
+      "name": "采购组",
+      "description": "采购与供应商协同成员",
+      "memberCount": 0
+    }
+  ],
+  "memoFolders": [
+    {
+      "id": "memo_folder_personal_knowledge",
+      "name": "20-个人关注知识",
+      "description": "成员自己提交的个人知识提醒自动归类",
+      "sortOrder": 20,
+      "scope": "personal",
+      "systemKey": "personal_knowledge",
+      "status": "active",
+      "systemManaged": true,
+      "createdBy": "system",
+      "updatedBy": "system",
+      "createdAt": "2026-07-24T00:00:00.000Z",
+      "updatedAt": "2026-07-24T00:00:00.000Z"
+    },
+    {
+      "id": "memo_folder_personal_operation",
+      "name": "99-个人操作提醒",
+      "description": "成员自己提交的个人操作提醒自动归类",
+      "sortOrder": 99,
+      "scope": "personal",
+      "systemKey": "personal_operation",
+      "status": "active",
+      "systemManaged": true,
+      "createdBy": "system",
+      "updatedBy": "system",
+      "createdAt": "2026-07-24T00:00:00.000Z",
+      "updatedAt": "2026-07-24T00:00:00.000Z"
     }
   ],
   "pageGroups": [

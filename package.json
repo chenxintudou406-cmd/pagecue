@@ -1,13 +1,19 @@
 {
   "name": "pagecue",
-  "version": "3.1.2",
+  "version": "3.2.7",
   "private": true,
   "description": "Context-aware notes, team reminders, and quick tools for Chrome and Edge.",
   "scripts": {
     "start": "node server.js",
     "test": "node scripts/build-extensions.js && node --test tests/*.test.js",
     "build:extensions": "node scripts/build-extensions.js",
-    "migrate:v3": "node scripts/migrate-v3.js"
+    "migrate:v3": "node scripts/migrate-v3.js",
+    "migrate:p0": "node scripts/migrate-p0.js",
+    "migrate:groups": "node scripts/migrate-groups-v320.js",
+    "migrate:management-group": "node scripts/migrate-management-group-v326.js",
+    "migrate:personal-folders": "node scripts/migrate-personal-folders-v320.js",
+    "backup:data": "node scripts/backup-data.js",
+    "verify:backup": "node scripts/restore-backup.js"
   },
   "engines": {
     "node": ">=20"

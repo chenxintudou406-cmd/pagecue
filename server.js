@@ -7,6 +7,18 @@ const { URL } = require("node:url");
 const webPush = require("web-push");
 const packageJson = require("./package.json");
 const { matchesSite } = require("./extension/shared/rule-engine.js");
+const { validateSelection: validateQuickSelection } = require("./extension/shared/quick-create-policy.js");
+const {
+  INTERACTION_ACTIONS,
+  normalizeAudience,
+  normalizePageBucket,
+  createSubmissionSnapshot,
+  funnelStats
+} = require("./shared/p0-model.js");
+
+function isSupportedPageUrlProtocol(protocol) {
+  return /^(https?|file):$/.test(protocol);
+}
 const { nextAlarmOccurrence } = require("./extension/shared/alarm-schedule.js");
 
 const PORT = Number(process.env.PORT || 8787);
@@ -35,18 +47,91 @@ const WORKBUDDY_API_VERSION = "1";
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const LOGIN_MAX_FAILURES = 5;
 const loginFailures = new Map();
+const PERSONAL_MEMO_FOLDERS = [
+  {
+    id: "memo_folder_personal_knowledge",
+    name: "20-个人关注知识",
+    description: "成员自己提交的个人知识提醒自动归类",
+    sortOrder: 20,
+    scope: "personal",
+    systemKey: "personal_knowledge"
+  },
+  {
+    id: "memo_folder_personal_operation",
+    name: "99-个人操作提醒",
+    description: "成员自己提交的个人操作提醒自动归类",
+    sortOrder: 99,
+    scope: "personal",
+    systemKey: "personal_operation"
+  }
+];
+
+function personalMemoFolderId(type, db = {}) {
+  const definition = PERSONAL_MEMO_FOLDERS[type === "operation" ? 1 : 0];
+  const existing = (db.memoFolders || []).find(folder => folder.systemKey === definition.systemKey || folder.id === definition.id || folder.name === definition.name);
+  return existing?.id || definition.id;
+}
+
+function ensurePersonalMemoFolders(db) {
+  if (!Array.isArray(db.memoFolders)) db.memoFolders = [];
+  const now = new Date().toISOString();
+  let changed = false;
+  for (const definition of PERSONAL_MEMO_FOLDERS) {
+    const existing = db.memoFolders.find(folder => folder.systemKey === definition.systemKey || folder.id === definition.id || folder.name === definition.name);
+    if (!existing) {
+      db.memoFolders.push({
+        ...definition,
+        status: "active",
+        systemManaged: true,
+        createdBy: "system",
+        updatedBy: "system",
+        createdAt: now,
+        updatedAt: now
+      });
+      changed = true;
+      continue;
+    }
+    let folderChanged = false;
+    const { id: _defaultId, ...managedDefinition } = definition;
+    for (const [key, value] of Object.entries({ ...managedDefinition, status: "active", systemManaged: true })) {
+      if (existing[key] !== value) {
+        existing[key] = value;
+        folderChanged = true;
+      }
+    }
+    if (folderChanged) {
+      existing.updatedAt = now;
+      changed = true;
+    }
+  }
+  return changed;
+}
 
 if (PUSH_CONFIGURED) webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
 function readDb() {
   const db = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  db.settings = normalizeSettings(db.settings || {});
+  if (!Array.isArray(db.groups)) db.groups = [];
+  db.groups = db.groups.map(group => ({
+    ...group,
+    canPublishOrganizationMemos: group.canPublishOrganizationMemos === true
+  }));
+  if (!Array.isArray(db.memoFolders)) db.memoFolders = [];
+  ensurePersonalMemoFolders(db);
   if (!Array.isArray(db.pageGroups)) db.pageGroups = [];
   db.pageGroups = db.pageGroups.map(group => ({ ...group, strategy: normalizePageStrategy(group.strategy) }));
   if (!Array.isArray(db.memos)) db.memos = [];
   db.memos = db.memos.map(memo => ({
     ...memo,
+    ...normalizeAudience(memo, { allowEmpty: true }),
+    folderId: memo.folderId ? String(memo.folderId).slice(0, 120) : null,
     type: memo.type === "operation" ? "operation" : "knowledge",
-    targetUserIds: Array.isArray(memo.targetUserIds) ? memo.targetUserIds : [],
+    triggerMode: memo.triggerMode === "broadcast" ? "broadcast" : "page_match",
+    createdByMemberId: memo.createdByMemberId || memo.createdBy || memo.ownerId || null,
+    submittedByMemberId: memo.submittedByMemberId || memo.createdByMemberId || memo.createdBy || memo.ownerId || null,
+    createdByNameSnapshot: String(memo.createdByNameSnapshot || "").slice(0, 120),
+    submittedByNameSnapshot: String(memo.submittedByNameSnapshot || memo.integration?.submittedBy || "").slice(0, 120),
     dailyReminder: memo.type === "operation" ? { enabled: true, timezone: String(memo.dailyReminder?.timezone || "Asia/Shanghai") } : { enabled: false, timezone: "Asia/Shanghai" },
     links: normalizeLinks(memo.links),
     annotation: normalizeAnnotation(memo.annotation, memo.priority, memo.scope),
@@ -63,9 +148,13 @@ function readDb() {
   if (!Array.isArray(db.suppliers)) db.suppliers = [];
   if (!Array.isArray(db.memoComments)) db.memoComments = [];
   if (!Array.isArray(db.invitations)) db.invitations = [];
+  db.invitations = db.invitations.map(invitation => ({ ...invitation, memberId: invitation.memberId || invitation.userId || null }));
   if (!Array.isArray(db.deviceBindings)) db.deviceBindings = [];
   if (!Array.isArray(db.accountEvents)) db.accountEvents = [];
   if (!Array.isArray(db.integrationRequests)) db.integrationRequests = [];
+  if (!Array.isArray(db.submissionSnapshots)) db.submissionSnapshots = [];
+  if (!Array.isArray(db.memberFeedback)) db.memberFeedback = [];
+  if (!Array.isArray(db.broadcastReceipts)) db.broadcastReceipts = [];
   if (!Array.isArray(db.users)) db.users = [];
   db.users = db.users.map(user => ({ ...user, groupIds: Array.isArray(user.groupIds) ? user.groupIds : [], status: user.status || "active" }));
   ensureSupplierTriggerMemos(db);
@@ -124,8 +213,10 @@ function ensureSupplierTriggerMemos(db) {
       links: [],
       entityRefs: [{ type: "supplier", id: supplier.id, displayName: supplier.companyName }],
       rule: normalizeRule({ pageScope: "global", pageGroupIds: [], sitePatterns: [], includeTerms: supplier.matchTerms, excludeTerms: [], operator: "OR", caseSensitive: false, useRegex: false, cooldownMinutes: 30 }),
+      audienceType: "all",
       targetGroupIds: [],
       targetUserIds: [],
+      triggerMode: "page_match",
       priority: "normal",
       annotation: normalizeAnnotation({ template: "standard", keywordTerms: supplier.matchTerms, anchors: [] }, "normal", "organization"),
       intensity: "standard",
@@ -139,6 +230,8 @@ function ensureSupplierTriggerMemos(db) {
       supplierRevision: revision,
       createdBy: existing?.createdBy || supplier.createdBy || "admin_demo",
       updatedBy: supplier.updatedBy || supplier.createdBy || "admin_demo",
+      createdByMemberId: existing?.createdByMemberId || existing?.createdBy || supplier.createdBy || "admin_demo",
+      submittedByMemberId: existing?.submittedByMemberId || existing?.createdByMemberId || existing?.createdBy || supplier.createdBy || "admin_demo",
       createdFromDeviceId: null,
       updatedFromDeviceId: null,
       createdAt: existing?.createdAt || supplier.createdAt || now,
@@ -275,22 +368,28 @@ function loginBlocked(req) {
 }
 
 function appendAudit(db, { action, entityType, entityId, userId, detail = null }) {
+  const member = db.users.find(item => item.id === userId);
   db.auditLog.push({
     id: `audit_${randomUUID()}`,
     action,
     entityType,
     entityId,
     userId,
+    memberId: userId,
+    memberNameSnapshot: member?.name || String(detail?.submittedBy || userId || "未知成员").slice(0, 120),
     detail,
     createdAt: new Date().toISOString()
   });
 }
 
 function appendAccountEvent(db, { type, userId, binding, actorId = null, invitation = null }) {
+  const member = db.users.find(item => item.id === userId);
   db.accountEvents.push({
     id: `account_event_${randomUUID()}`,
     type,
     userId,
+    memberId: userId,
+    memberNameSnapshot: member?.name || String(userId || "未知成员").slice(0, 120),
     bindingId: binding?.id || null,
     deviceId: binding?.deviceId || null,
     browser: binding?.browser || "unknown",
@@ -301,6 +400,45 @@ function appendAccountEvent(db, { type, userId, binding, actorId = null, invitat
     createdAt: new Date().toISOString()
   });
   if (db.accountEvents.length > 5000) db.accountEvents.splice(0, db.accountEvents.length - 5000);
+}
+
+function appendSubmissionSnapshot(db, entity, {
+  entityType = "memo",
+  actorMemberId,
+  actorName,
+  source = "admin",
+  requestId = null
+} = {}) {
+  const existing = requestId
+    ? db.submissionSnapshots.find(item => item.entityType === entityType && item.requestId === requestId)
+    : null;
+  if (existing) return existing;
+  const member = db.users.find(item => item.id === actorMemberId);
+  const snapshot = createSubmissionSnapshot(entity, {
+    entityType,
+    actorMemberId,
+    actorName: actorName || member?.name || actorMemberId,
+    source,
+    requestId
+  });
+  db.submissionSnapshots.push(snapshot);
+  return snapshot;
+}
+
+function invitationIsInactive(invitation, now = Date.now()) {
+  if (!invitation || invitation.status !== "pending") return true;
+  const expiresAt = Date.parse(invitation.expiresAt || "");
+  return !Number.isFinite(expiresAt) || expiresAt <= now;
+}
+
+function removeInactiveInvitations(db) {
+  const removed = [];
+  db.invitations = (db.invitations || []).filter(invitation => {
+    if (!invitationIsInactive(invitation)) return true;
+    removed.push(invitation);
+    return false;
+  });
+  return removed;
 }
 
 function send(res, status, body, type = "application/json; charset=utf-8", extraHeaders = {}) {
@@ -333,6 +471,15 @@ function parseBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+function normalizeSettings(settings = {}) {
+  return {
+    defaultCooldownMinutes: Number(settings.defaultCooldownMinutes || 30),
+    recommendedSitePatterns: Array.isArray(settings.recommendedSitePatterns) ? settings.recommendedSitePatterns.map(String).filter(Boolean).slice(0, 50) : [],
+    excludedSitePatterns: Array.isArray(settings.excludedSitePatterns) ? [...new Set(settings.excludedSitePatterns.map(String).map(item => item.trim()).filter(Boolean))].slice(0, 100) : [],
+    privacyMode: String(settings.privacyMode || "local_match")
+  };
 }
 
 function requireWorkbuddy(req) {
@@ -466,10 +613,41 @@ function localDateKey(value = Date.now(), timezone = "Asia/Shanghai") {
 
 function visibleTo(item, user) {
   if (item.scope === "personal") return item.ownerId === user.id;
-  const targetGroups = item.targetGroupIds || [];
-  const targetUsers = item.targetUserIds || [];
-  if (targetGroups.length === 0 && targetUsers.length === 0) return true;
-  return targetUsers.includes(user.id) || targetGroups.some(id => user.groupIds.includes(id));
+  const audience = normalizeAudience(item, { allowEmpty: true });
+  if (audience.audienceType === "all") return true;
+  if (audience.audienceType === "members") return audience.targetUserIds.includes(user.id);
+  return audience.targetGroupIds.some(id => user.groupIds.includes(id));
+}
+
+function canPublishOrganizationMemos(db, user) {
+  if (!user || user.status === "disabled") return false;
+  if (user.role === "admin") return true;
+  const groupIds = new Set(Array.isArray(user.groupIds) ? user.groupIds : []);
+  return (db.groups || []).some(group =>
+    groupIds.has(group.id) &&
+    group.canPublishOrganizationMemos === true
+  );
+}
+
+function validateMemoAudience(db, memo) {
+  if (memo.scope === "personal") return memo;
+  const audience = normalizeAudience(memo);
+  if (audience.audienceType === "groups" && audience.targetGroupIds.some(id => !db.groups.some(group => group.id === id))) {
+    const error = new Error("投放成员组不存在");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (audience.audienceType === "members" && audience.targetUserIds.some(id => !db.users.some(user => user.id === id && user.status !== "disabled"))) {
+    const error = new Error("投放成员不存在或已停用");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (memo.triggerMode === "broadcast" && memo.annotation?.template !== "strong") {
+    const error = new Error("广播提醒必须使用重度提醒");
+    error.statusCode = 400;
+    throw error;
+  }
+  return memo;
 }
 
 function cleanPushSubscription(input = {}, existing = {}) {
@@ -534,13 +712,17 @@ function adminState(db) {
       title: memo.title,
       scope: memo.scope,
       type: memo.type || "knowledge",
+      lifecycleStatus: memo.expiresAt && Date.parse(memo.expiresAt) <= Date.now() ? "expired" : memo.status,
       createdBy: memo.createdBy || memo.ownerId || null,
+      createdByMemberId: memo.createdByMemberId || memo.createdBy || memo.ownerId || null,
       createdByName: userName(memo.createdBy || memo.ownerId),
+      submittedByMemberId: memo.submittedByMemberId || memo.createdByMemberId || memo.createdBy || memo.ownerId || null,
+      submittedByNameSnapshot: memo.submittedByNameSnapshot || userName(memo.submittedByMemberId || memo.createdByMemberId || memo.createdBy || memo.ownerId),
       createdFromDeviceId: memo.createdFromDeviceId || null,
       createdAt: memo.createdAt,
       stats,
       recentFeedback: events
-        .filter(event => ["helpful", "unhelpful", "confirmed", "ignored", "snoozed"].includes(event.action))
+        .filter(event => ["helpful", "unhelpful", "feedback_up", "feedback_down", "confirmed", "operation_completed", "ignored", "snoozed"].includes(event.action))
         .reverse()
         .map(event => ({ ...event, userName: userName(event.userId) })),
       comments: memoComments.filter(comment => comment.memoId === memo.id).map(comment => ({ ...comment, userName: userName(comment.userId) }))
@@ -550,11 +732,22 @@ function adminState(db) {
     ...safe,
     memos: db.memos.filter(memo => !memo.systemGeneratedSupplier),
     groups: db.groups.map(group => ({ ...group, memberCount: db.users.filter(user => user.status !== "disabled" && user.groupIds.includes(group.id)).length })),
-    invitations: invitations.map(({ codeHash, codeCipher, ...item }) => ({ ...item, code: decryptInvitationCode(codeCipher) })),
+    invitations: invitations.filter(invitation => !invitationIsInactive(invitation)).map(({ codeHash, codeCipher, ...item }) => ({
+      ...item,
+      memberId: item.memberId || item.userId,
+      userId: item.memberId || item.userId,
+      code: decryptInvitationCode(codeCipher)
+    })),
     deviceBindings: deviceBindings.map(({ tokenHash, ...item }) => item),
     accountEvents: accountEvents.slice(-1000).reverse(),
     pushStats: publicPushStats(db),
     stats: eventStats(db.events),
+    funnels: {
+      overall: funnelStats(db.events),
+      light: funnelStats(db.events.filter(event => event.intensity === "light")),
+      mediumHeavy: funnelStats(db.events.filter(event => ["medium", "heavy"].includes(event.intensity))),
+      websites: websiteFunnelStats(db.events)
+    },
     memoActivity,
     memoComments: memoComments.map(comment => ({ ...comment, userName: userName(comment.userId) })),
     operationStats: db.memos.filter(memo => memo.type === "operation").map(memo => {
@@ -578,7 +771,7 @@ function subscriptionTargets(db, targetGroupIds = [], targetUserIds = []) {
 }
 
 async function dispatchPush(db, input = {}) {
-  const type = input.type === "extension_update" ? "extension_update" : "sync";
+  const type = ["extension_update", "broadcast"].includes(input.type) ? input.type : "sync";
   const targetGroupIds = Array.isArray(input.targetGroupIds) ? input.targetGroupIds.map(String).filter(Boolean) : [];
   const targetUserIds = Array.isArray(input.targetUserIds) ? input.targetUserIds.map(String).filter(Boolean) : [];
   const targets = subscriptionTargets(db, targetGroupIds, targetUserIds);
@@ -601,7 +794,7 @@ async function dispatchPush(db, input = {}) {
   if (PUSH_CONFIGURED) {
     await Promise.all(targets.map(async target => {
       try {
-        await webPush.sendNotification(target.subscription, payload, { TTL: 300, urgency: type === "extension_update" ? "high" : "normal" });
+        await webPush.sendNotification(target.subscription, payload, { TTL: 300, urgency: ["extension_update", "broadcast"].includes(type) ? "high" : "normal" });
         delivery.acceptedCount += 1;
       } catch (error) {
         delivery.failedCount += 1;
@@ -772,10 +965,17 @@ function cleanMemo(input, existing = {}, actorId = "") {
   const now = new Date().toISOString();
   const ownerId = scope === "personal" ? String(input.ownerId || existing.ownerId || "") : null;
   const changedBy = String(actorId || ownerId || existing.updatedBy || existing.createdBy || "admin_demo").slice(0, 120);
+  const audienceInput = input.audienceType === undefined && input.targetGroupIds === undefined && input.targetUserIds === undefined
+    ? existing
+    : input;
+  const audience = scope === "personal"
+    ? { audienceType: "members", targetGroupIds: [], targetUserIds: ownerId ? [ownerId] : [] }
+    : normalizeAudience(audienceInput);
   const priority = ["normal", "important"].includes(input.priority) ? input.priority : (existing.priority || "normal");
   const annotationInput = input.annotation === undefined ? existing.annotation : input.annotation;
   const startsAt = input.startsAt === undefined ? (existing.startsAt || null) : (input.startsAt || null);
   const expiresAt = input.expiresAt === undefined ? (existing.expiresAt || null) : (input.expiresAt || null);
+  const folderId = input.folderId === undefined ? (existing.folderId || null) : (String(input.folderId || "").trim().slice(0, 120) || null);
   if (type === "operation" && (!startsAt || !expiresAt || !Number.isFinite(Date.parse(startsAt)) || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(startsAt) >= Date.parse(expiresAt))) {
     const error = new Error("操作提醒必须设置有效的开始和结束时间");
     error.statusCode = 400;
@@ -787,14 +987,17 @@ function cleanMemo(input, existing = {}, actorId = "") {
     type,
     scope,
     ownerId,
+    triggerMode: input.triggerMode === "broadcast" ? "broadcast" : (existing.triggerMode === "broadcast" && input.triggerMode === undefined ? "broadcast" : "page_match"),
+    folderId,
     title: String(input.title || "未命名备忘").trim().slice(0, 120),
     body: String(input.body || "").slice(0, 20_000),
     tags: Array.isArray(input.tags) ? input.tags.map(String).slice(0, 20) : [],
     links: input.links === undefined ? normalizeLinks(existing.links) : normalizeLinks(input.links),
     entityRefs: scope === "organization" ? normalizeEntityRefs(input.entityRefs === undefined ? existing.entityRefs : input.entityRefs) : [],
     rule: normalizeRule(input.rule),
-    targetGroupIds: scope === "organization" && Array.isArray(input.targetGroupIds) ? input.targetGroupIds.map(String) : [],
-    targetUserIds: scope === "organization" && Array.isArray(input.targetUserIds) ? input.targetUserIds.map(String) : [],
+    audienceType: audience.audienceType,
+    targetGroupIds: audience.targetGroupIds,
+    targetUserIds: audience.targetUserIds,
     priority,
     annotation: normalizeAnnotation(annotationInput, priority, scope),
     intensity: normalizeAnnotation(annotationInput, priority, scope).intensity,
@@ -808,6 +1011,10 @@ function cleanMemo(input, existing = {}, actorId = "") {
     version: Number(existing.version || 0) + 1,
     createdBy: existing.createdBy || changedBy,
     updatedBy: changedBy,
+    createdByMemberId: existing.createdByMemberId || existing.createdBy || changedBy,
+    submittedByMemberId: String(input.submittedByMemberId || existing.submittedByMemberId || existing.createdByMemberId || existing.createdBy || changedBy).slice(0, 120),
+    createdByNameSnapshot: String(existing.createdByNameSnapshot || input.createdByNameSnapshot || input.actorName || "").slice(0, 120),
+    submittedByNameSnapshot: String(input.submittedByNameSnapshot || existing.submittedByNameSnapshot || input.actorName || "").slice(0, 120),
     createdFromDeviceId: existing.createdFromDeviceId || String(input.deviceId || "").slice(0, 200) || null,
     updatedFromDeviceId: String(input.deviceId || existing.updatedFromDeviceId || "").slice(0, 200) || null,
     createdAt: existing.createdAt || now,
@@ -891,6 +1098,51 @@ function resolveMemoPageGroups(memo, pageGroups = []) {
   return { ...memo, rule: { ...rule, sitePatterns: [...new Set(selectedPatterns.length ? selectedPatterns : rule.sitePatterns)], pageStrategies } };
 }
 
+function cleanMemoFolder(input, existing = {}, actorId = "admin_demo") {
+  const now = new Date().toISOString();
+  const name = String(input.name || existing.name || "").trim().slice(0, 80);
+  if (!name) {
+    const error = new Error("文件夹名称不能为空");
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    ...existing,
+    id: existing.id || `memo_folder_${randomUUID()}`,
+    name,
+    description: String(input.description === undefined ? (existing.description || "") : input.description).trim().slice(0, 300),
+    sortOrder: Math.max(0, Math.min(Number(input.sortOrder ?? existing.sortOrder ?? 0) || 0, 9999)),
+    status: ["active", "archived"].includes(input.status) ? input.status : (existing.status || "active"),
+    createdBy: existing.createdBy || actorId,
+    updatedBy: actorId,
+    createdAt: existing.createdAt || now,
+    updatedAt: now
+  };
+}
+
+function cleanGroup(input, existing = {}, actorId = "admin_demo") {
+  const now = new Date().toISOString();
+  const name = String(input.name === undefined ? (existing.name || "") : input.name).trim().slice(0, 80);
+  if (!name) {
+    const error = new Error("分组名称不能为空");
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    ...existing,
+    id: existing.id || `group_${randomUUID()}`,
+    name,
+    description: String(input.description === undefined ? (existing.description || "") : input.description).trim().slice(0, 300),
+    canPublishOrganizationMemos: input.canPublishOrganizationMemos === undefined
+      ? existing.canPublishOrganizationMemos === true
+      : input.canPublishOrganizationMemos === true,
+    createdBy: existing.createdBy || actorId,
+    updatedBy: actorId,
+    createdAt: existing.createdAt || now,
+    updatedAt: now
+  };
+}
+
 function cleanPageGroup(input, existing = {}, actorId = "admin_demo") {
   const now = new Date().toISOString();
   const incomingStrategy = normalizePageStrategy(input.strategy || existing.strategy);
@@ -937,14 +1189,54 @@ function cleanTool(input, existing = {}, actorId = "admin_demo") {
 }
 
 function eventStats(events) {
-  const totals = { triggered: 0, opened: 0, confirmed: 0, ignored: 0, snoozed: 0, helpful: 0, unhelpful: 0, annotation_shown: 0, annotation_opened: 0, annotation_located: 0, annotation_unresolved: 0 };
+  const totals = {
+    triggered: 0,
+    opened: 0,
+    confirmed: 0,
+    ignored: 0,
+    snoozed: 0,
+    helpful: 0,
+    unhelpful: 0,
+    annotation_shown: 0,
+    annotation_opened: 0,
+    annotation_located: 0,
+    annotation_unresolved: 0,
+    published: 0,
+    matched: 0,
+    highlight_shown: 0,
+    highlight_opened: 0,
+    popup_shown: 0,
+    expanded: 0,
+    link_opened: 0,
+    link_copied: 0,
+    comment_opened: 0,
+    comment_submitted: 0,
+    operation_completed: 0,
+    feedback_up: 0,
+    feedback_down: 0
+  };
   for (const event of events) if (Object.hasOwn(totals, event.action)) totals[event.action] += 1;
   const feedbackTotal = totals.helpful + totals.unhelpful;
+  const funnel = funnelStats(events);
   return {
     ...totals,
     openRate: totals.triggered ? totals.opened / totals.triggered : 0,
-    helpfulRate: feedbackTotal ? totals.helpful / feedbackTotal : 0
+    helpfulRate: feedbackTotal ? totals.helpful / feedbackTotal : 0,
+    funnel
   };
+}
+
+function websiteFunnelStats(events = []) {
+  const buckets = new Map();
+  for (const event of events) {
+    const bucket = normalizePageBucket(event.pageBucket || event.domain || "");
+    const current = buckets.get(bucket) || [];
+    current.push(event);
+    buckets.set(bucket, current);
+  }
+  return [...buckets.entries()]
+    .map(([pageBucket, bucketEvents]) => ({ pageBucket, ...funnelStats(bucketEvents) }))
+    .sort((a, b) => Number(b.actions.matched?.events || 0) - Number(a.actions.matched?.events || 0) || a.pageBucket.localeCompare(b.pageBucket));
 }
 
 function serveStatic(reqPath, res) {
@@ -1039,6 +1331,8 @@ async function handleApi(req, res, url) {
     if (pageScope === "page_groups" && !pageGroupIds.length) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "选择特定页面组时，pageGroups 不能为空" });
     const targetGroupIds = resolveWorkbuddyReferences(body.targetGroups, db.groups, "成员组");
     const targetUserIds = resolveWorkbuddyReferences(body.targetUsers, db.users.filter(user => user.status !== "disabled"), "成员");
+    if (targetGroupIds.length && targetUserIds.length) return send(res, 400, { ok: false, status: "validation_failed", requestId, message: "成员组和指定成员不能同时作为投放对象" });
+    const audienceType = targetUserIds.length ? "members" : targetGroupIds.length ? "groups" : "all";
     if (!targetGroupIds.length && !targetUserIds.length) defaultsApplied.push("投放对象=全员");
     const intensity = ["light", "medium", "heavy"].includes(body.intensity) ? body.intensity : "light";
     if (!body.intensity) defaultsApplied.push("强度=轻度");
@@ -1065,6 +1359,7 @@ async function handleApi(req, res, url) {
       body: memoBody,
       tags: [...workbuddyStrings(body.tags, 19), "WorkBuddy"],
       links: workbuddyLinks(body.links),
+      audienceType,
       targetGroupIds,
       targetUserIds,
       startsAt,
@@ -1072,6 +1367,8 @@ async function handleApi(req, res, url) {
       priority: intensity === "heavy" ? "important" : "normal",
       annotation: { template, keywordTerms: keywords, anchors: [] },
       status: "published",
+      submittedByMemberId: WORKBUDDY_ACTOR_ID,
+      submittedByNameSnapshot: submittedBy,
       rule: {
         pageScope,
         pageGroupIds,
@@ -1102,6 +1399,13 @@ async function handleApi(req, res, url) {
     };
     db.memos.push(memo);
     db.integrationRequests.push(requestRecord);
+    appendSubmissionSnapshot(db, memo, {
+      entityType: "memo",
+      actorMemberId: WORKBUDDY_ACTOR_ID,
+      actorName: submittedBy,
+      source: "workbuddy",
+      requestId
+    });
     if (db.integrationRequests.length > 5000) db.integrationRequests.splice(0, db.integrationRequests.length - 5000);
     appendAudit(db, {
       action: "created_via_workbuddy",
@@ -1154,7 +1458,7 @@ async function handleApi(req, res, url) {
     const codeHash = hashToken(String(body.inviteCode || "").trim().toUpperCase());
     const invitation = db.invitations.find(item => item.codeHash === codeHash && item.status === "pending");
     if (!invitation || Date.parse(invitation.expiresAt) <= Date.now()) return send(res, 400, { error: "邀请码无效或已过期" });
-    const user = db.users.find(item => item.id === invitation.userId && item.status !== "disabled");
+    const user = db.users.find(item => item.id === (invitation.memberId || invitation.userId) && item.status !== "disabled");
     if (!user) return send(res, 400, { error: "邀请码对应成员不可用" });
     const deviceId = String(body.deviceId || randomUUID()).trim().slice(0, 200);
     const token = randomBytes(32).toString("base64url");
@@ -1176,7 +1480,8 @@ async function handleApi(req, res, url) {
     invitation.usedAt = new Date().toISOString();
     invitation.usedByDeviceId = deviceId;
     appendAudit(db, { action: "device_bound", entityType: "user", entityId: user.id, userId: user.id });
-    appendAccountEvent(db, { type: "device_bound", userId: user.id, binding, actorId: user.id });
+    appendAccountEvent(db, { type: "device_bound", userId: user.id, binding, actorId: user.id, invitation });
+    db.invitations = db.invitations.filter(item => item.id !== invitation.id);
     writeDb(db);
     return send(res, 201, { token, user, deviceId });
   }
@@ -1205,6 +1510,35 @@ async function handleApi(req, res, url) {
 
   const codeCompletion = /^\/api\/admin\/annotation-sessions\/[^/]+\/complete$/.test(url.pathname);
   if (url.pathname.startsWith("/api/admin/") && !codeCompletion) requireAdmin(db, req);
+
+  if (req.method === "POST" && url.pathname === "/api/admin/groups") {
+    const body = await parseBody(req);
+    const group = cleanGroup(body, {}, req.adminActorId);
+    if (db.groups.some(item => item.name.trim().toLocaleLowerCase() === group.name.toLocaleLowerCase())) {
+      return send(res, 409, { error: "分组名称已存在" });
+    }
+    db.groups.push(group);
+    appendAudit(db, { action: "created", entityType: "group", entityId: group.id, userId: req.adminActorId });
+    db.meta.version += 1;
+    writeDb(db);
+    return send(res, 201, group);
+  }
+
+  const adminGroupMatch = url.pathname.match(/^\/api\/admin\/groups\/([^/]+)$/);
+  if (adminGroupMatch && req.method === "PUT") {
+    const index = db.groups.findIndex(item => item.id === adminGroupMatch[1]);
+    if (index < 0) return send(res, 404, { error: "成员分组不存在" });
+    const body = await parseBody(req);
+    const group = cleanGroup(body, db.groups[index], req.adminActorId);
+    if (db.groups.some((item, itemIndex) => itemIndex !== index && item.name.trim().toLocaleLowerCase() === group.name.toLocaleLowerCase())) {
+      return send(res, 409, { error: "分组名称已存在" });
+    }
+    db.groups[index] = group;
+    appendAudit(db, { action: "updated", entityType: "group", entityId: group.id, userId: req.adminActorId });
+    db.meta.version += 1;
+    writeDb(db);
+    return send(res, 200, group);
+  }
 
   if (req.method === "POST" && url.pathname === "/api/admin/users") {
     const body = await parseBody(req);
@@ -1238,12 +1572,13 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/admin/invitations") {
     const body = await parseBody(req);
-    const user = db.users.find(item => item.id === body.userId && item.status !== "disabled");
+    const requestedMemberId = String(body.memberId || body.userId || "");
+    const user = db.users.find(item => item.id === requestedMemberId && item.status !== "disabled");
     if (!user) return send(res, 404, { error: "成员不存在" });
     const code = randomBytes(4).toString("hex").toUpperCase();
     const invitation = {
       id: `invitation_${randomUUID()}`,
-      userId: user.id,
+      memberId: user.id,
       codeHash: hashToken(code),
       codeCipher: encryptInvitationCode(code),
       codeSuffix: code.slice(-4),
@@ -1262,13 +1597,23 @@ async function handleApi(req, res, url) {
     return send(res, 201, { ...publicInvitation, code });
   }
 
+  if (req.method === "DELETE" && url.pathname === "/api/admin/invitations/inactive") {
+    const removed = removeInactiveInvitations(db);
+    if (removed.length) {
+      appendAudit(db, { action: "invitations_deleted", entityType: "invitation", entityId: "inactive", userId: req.adminActorId, detail: { count: removed.length } });
+      writeDb(db);
+    }
+    return send(res, 200, { ok: true, deletedCount: removed.length });
+  }
+
   const adminInvitationMatch = url.pathname.match(/^\/api\/admin\/invitations\/([^/]+)$/);
   if (adminInvitationMatch && req.method === "DELETE") {
     const index = db.invitations.findIndex(item => item.id === adminInvitationMatch[1]);
     if (index < 0) return send(res, 404, { error: "邀请码不存在" });
     const [invitation] = db.invitations.splice(index, 1);
-    appendAudit(db, { action: "invitation_deleted", entityType: "user", entityId: invitation.userId, userId: req.adminActorId });
-    appendAccountEvent(db, { type: "invitation_deleted", userId: invitation.userId, actorId: req.adminActorId, invitation });
+    const memberId = invitation.memberId || invitation.userId;
+    appendAudit(db, { action: "invitation_deleted", entityType: "user", entityId: memberId, userId: req.adminActorId });
+    appendAccountEvent(db, { type: "invitation_deleted", userId: memberId, actorId: req.adminActorId, invitation });
     writeDb(db);
     return send(res, 200, { ok: true });
   }
@@ -1361,12 +1706,30 @@ async function handleApi(req, res, url) {
     const { user, binding } = requireMember(db, req);
     const timezone = String(user.timezone || "Asia/Shanghai");
     const today = localDateKey(Date.now(), timezone);
+    const visibleActiveMemos = db.memos.filter(item => isActive(item) && visibleTo(item, user));
+    const acknowledgedBroadcastKeys = new Set(db.broadcastReceipts
+      .filter(item => item.memberId === user.id)
+      .map(item => `${item.memoId}:${item.memoVersion}`));
+    const feedbackByMemoVersion = new Map(db.memberFeedback
+      .filter(item => item.memberId === user.id)
+      .map(item => [`${item.memoId}:${item.memoVersion}`, item.action]));
+    const memberMemo = item => ({
+      ...resolveMemoPageGroups(item, db.pageGroups),
+      commentCount: db.memoComments.filter(comment => comment.memoId === item.id).length,
+      myFeedback: feedbackByMemoVersion.get(`${item.id}:${Number(item.version || 1)}`) || null
+    });
     return send(res, 200, {
       version: db.meta.version,
       user,
       identity: { deviceId: binding.deviceId },
+      capabilities: {
+        canPublishOrganizationMemos: canPublishOrganizationMemos(db, user)
+      },
       groups: db.groups.filter(group => user.groupIds.includes(group.id)),
-      memos: db.memos.filter(item => isActive(item) && visibleTo(item, user)).map(item => ({ ...resolveMemoPageGroups(item, db.pageGroups), commentCount: db.memoComments.filter(comment => comment.memoId === item.id).length })),
+      memos: visibleActiveMemos.map(memberMemo),
+      pendingBroadcasts: visibleActiveMemos
+        .filter(item => item.triggerMode === "broadcast" && !acknowledgedBroadcastKeys.has(`${item.id}:${Number(item.version || 1)}`))
+        .map(memberMemo),
       operationReceipts: db.operationReceipts.filter(item => item.userId === user.id && item.localDate === today),
       tools: db.tools.filter(item => isActive(item) && visibleTo(item, user)).sort((a, b) => a.sortOrder - b.sortOrder),
       pageGroups: db.pageGroups,
@@ -1387,8 +1750,19 @@ async function handleApi(req, res, url) {
     const body = await parseBody(req);
     const content = String(body.content || "").trim().slice(0, 2000);
     if (!content) return send(res, 400, { error: "评论内容不能为空" });
-    const comment = { id: `comment_${randomUUID()}`, memoId: memo.id, userId: user.id, deviceId: binding.deviceId, content, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const comment = {
+      id: `comment_${randomUUID()}`,
+      memoId: memo.id,
+      userId: user.id,
+      memberId: user.id,
+      memberNameSnapshot: user.name,
+      deviceId: binding.deviceId,
+      content,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
     db.memoComments.push(comment);
+    appendSubmissionSnapshot(db, comment, { entityType: "memoComment", actorMemberId: user.id, actorName: user.name, source: "member", requestId: body.requestId || null });
     appendAudit(db, { action: "commented", entityType: "memo", entityId: memo.id, userId: user.id, detail: { commentId: comment.id } });
     writeDb(db);
     return send(res, 201, { ...comment, userName: user.name, canDelete: true });
@@ -1401,6 +1775,7 @@ async function handleApi(req, res, url) {
     if (index < 0) return send(res, 404, { error: "评论不存在" });
     if (db.memoComments[index].userId !== user.id) return send(res, 403, { error: "只能删除自己的评论" });
     const comment = db.memoComments[index];
+    appendSubmissionSnapshot(db, comment, { entityType: "memoCommentDeleted", actorMemberId: user.id, actorName: user.name, source: "member" });
     db.memoComments.splice(index, 1);
     appendAudit(db, { action: "comment_deleted", entityType: "memo", entityId: comment.memoId, userId: user.id, detail: { commentId: comment.id } });
     writeDb(db);
@@ -1413,6 +1788,7 @@ async function handleApi(req, res, url) {
     const index = db.memoComments.findIndex(item => item.id === adminCommentMatch[1]);
     if (index < 0) return send(res, 404, { error: "评论不存在" });
     const comment = db.memoComments[index];
+    appendSubmissionSnapshot(db, comment, { entityType: "memoCommentDeleted", actorMemberId: actorId, source: "admin" });
     db.memoComments.splice(index, 1);
     appendAudit(db, { action: "comment_deleted", entityType: "memo", entityId: comment.memoId, userId: actorId, detail: { commentId: comment.id } });
     writeDb(db);
@@ -1433,6 +1809,17 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ...adminState(db), auth: { adminId: session.adminId, phone: session.phone, expiresAt: session.expiresAt } });
   }
 
+  if (req.method === "PUT" && url.pathname === "/api/admin/settings") {
+    const actorId = requireAdmin(db, req);
+    const body = await parseBody(req);
+    db.settings = normalizeSettings({ ...db.settings, ...body });
+    appendAudit(db, { action: "updated", entityType: "settings", entityId: "organization_settings", userId: actorId });
+    db.meta.version += 1;
+    writeDb(db);
+    const delivery = await dispatchPush(db, { type: "sync" });
+    return send(res, 200, { settings: db.settings, sync: { targetCount: delivery.targetCount, acceptedCount: delivery.acceptedCount } });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/admin/annotation-sessions") {
     const actorId = requireAdmin(db, req);
     const body = await parseBody(req);
@@ -1443,8 +1830,8 @@ async function handleApi(req, res, url) {
     let targetUrl;
     try {
       targetUrl = new URL(String(body.url || ""));
-      if (!/^https?:$/.test(targetUrl.protocol)) throw new Error("invalid protocol");
-    } catch { return send(res, 400, { error: "请输入有效的 HTTP 或 HTTPS 标记网址" }); }
+      if (!isSupportedPageUrlProtocol(targetUrl.protocol)) throw new Error("invalid protocol");
+    } catch { return send(res, 400, { error: "请输入有效的 HTTP、HTTPS 或 file 标记网址" }); }
     if (!matchesSite(targetUrl.href, pageGroup.sitePatterns || [])) return send(res, 400, { error: "标记网址不属于所选页面组" });
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const session = {
@@ -1559,8 +1946,8 @@ async function handleApi(req, res, url) {
     let testUrl;
     try {
       testUrl = new URL(String(body.url || ""));
-      if (!/^https?:$/.test(testUrl.protocol)) throw new Error("invalid protocol");
-    } catch { return send(res, 400, { error: "请输入有效的 HTTP 或 HTTPS 测试网址" }); }
+      if (!isSupportedPageUrlProtocol(testUrl.protocol)) throw new Error("invalid protocol");
+    } catch { return send(res, 400, { error: "请输入有效的 HTTP、HTTPS 或 file 测试网址" }); }
     const keywords = Array.isArray(body.keywords) ? body.keywords.map(String).map(item => item.trim()).filter(Boolean).slice(0, 50) : [];
     if (!keywords.length) return send(res, 400, { error: "请至少填写一个测试关键词" });
     const request = {
@@ -1615,13 +2002,60 @@ async function handleApi(req, res, url) {
       id: `operation_receipt_${randomUUID()}`,
       memoId: memo.id,
       userId: user.id,
+      memberId: user.id,
+      memberNameSnapshot: user.name,
       localDate,
       action: "acknowledged",
       acknowledgedAt: new Date().toISOString(),
       deviceId: binding.deviceId
     };
     db.operationReceipts.push(receipt);
+    db.events.push({
+      id: `event_${receipt.id}`,
+      eventId: `operation:${receipt.id}`,
+      organizationId: db.meta.organizationId,
+      userId: user.id,
+      memberId: user.id,
+      memberNameSnapshot: user.name,
+      memoId: memo.id,
+      memoVersion: Number(memo.version || 1),
+      memoType: memo.type,
+      intensity: memo.intensity || memo.annotation?.intensity || "medium",
+      ruleId: memo.id,
+      deviceId: binding.deviceId,
+      domain: "unknown",
+      pageBucket: "unknown",
+      action: "operation_completed",
+      presentation: "reminder_card",
+      anchorId: "",
+      occurredAt: receipt.acknowledgedAt,
+      createdAt: receipt.acknowledgedAt
+    });
     appendAudit(db, { action: "operation_acknowledged", entityType: "memo", entityId: memo.id, userId: user.id });
+    writeDb(db);
+    return send(res, 201, receipt);
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/broadcast-receipts") {
+    const { user, binding } = requireMember(db, req);
+    const body = await parseBody(req);
+    const memo = db.memos.find(item => item.id === body.memoId && item.triggerMode === "broadcast" && isActive(item) && visibleTo(item, user));
+    if (!memo) return send(res, 404, { error: "广播提醒不存在或不可见" });
+    const memoVersion = Number(memo.version || 1);
+    const existing = db.broadcastReceipts.find(item => item.memoId === memo.id && item.memoVersion === memoVersion && item.memberId === user.id);
+    if (existing) return send(res, 200, existing);
+    const receipt = {
+      id: `broadcast_receipt_${randomUUID()}`,
+      memoId: memo.id,
+      memoVersion,
+      memberId: user.id,
+      memberNameSnapshot: user.name,
+      deviceId: binding.deviceId,
+      action: "acknowledged",
+      acknowledgedAt: new Date().toISOString()
+    };
+    db.broadcastReceipts.push(receipt);
+    appendAudit(db, { action: "broadcast_acknowledged", entityType: "memo", entityId: memo.id, userId: user.id, detail: { memoVersion } });
     writeDb(db);
     return send(res, 201, receipt);
   }
@@ -1699,32 +2133,167 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/events") {
     const { user, binding } = requireMember(db, req);
     const body = await parseBody(req);
-    const allowedActions = ["triggered", "opened", "confirmed", "ignored", "snoozed", "helpful", "unhelpful", "annotation_shown", "annotation_opened", "annotation_located", "annotation_unresolved"];
+    const allowedActions = [
+      "triggered", "opened", "confirmed", "ignored", "snoozed", "helpful", "unhelpful",
+      "annotation_shown", "annotation_opened", "annotation_located", "annotation_unresolved",
+      "published", "matched", "highlight_shown", "highlight_opened", "popup_shown", "expanded",
+      "link_opened", "link_copied", "comment_opened", "comment_submitted",
+      "operation_completed", "feedback_up", "feedback_down"
+    ];
     if (!allowedActions.includes(body.action)) return send(res, 400, { error: "不支持的事件类型" });
+    const eventId = String(body.eventId || `event-client-${randomUUID()}`).slice(0, 200);
+    const duplicate = db.events.find(item => item.eventId === eventId);
+    if (duplicate) return send(res, 200, duplicate);
+    const memo = db.memos.find(item => item.id === String(body.memoId || ""));
+    if (!memo || !visibleTo(memo, user)) return send(res, 404, { error: "提醒不存在或不可见" });
+    const pageBucket = normalizePageBucket(body.pageBucket || body.pageUrl || body.domain || "", body.pathHint || "");
+    const occurredAtValue = Date.parse(body.occurredAt || "");
+    const occurredAt = Number.isFinite(occurredAtValue) && occurredAtValue <= Date.now() + 5 * 60_000
+      ? new Date(occurredAtValue).toISOString()
+      : new Date().toISOString();
     const event = {
       id: `event_${randomUUID()}`,
+      eventId,
       organizationId: db.meta.organizationId,
       userId: user.id,
+      memberId: user.id,
+      memberNameSnapshot: user.name,
       memoId: String(body.memoId || ""),
+      memoVersion: Number(body.memoVersion || memo.version || 1),
+      memoType: memo.type || "knowledge",
+      intensity: memo.intensity || memo.annotation?.intensity || "medium",
       ruleId: String(body.ruleId || body.memoId || ""),
       deviceId: binding.deviceId,
-      domain: String(body.domain || "").slice(0, 255),
+      domain: pageBucket,
+      pageBucket,
       action: body.action,
       presentation: String(body.presentation || "sidepanel"),
       anchorId: String(body.anchorId || "").slice(0, 120),
+      occurredAt,
       createdAt: new Date().toISOString()
     };
     db.events.push(event);
+    let feedback = null;
+    if (body.action === "feedback_up" || body.action === "feedback_down") {
+      const feedbackIndex = db.memberFeedback.findIndex(item => item.memoId === memo.id && item.memoVersion === event.memoVersion && item.memberId === user.id);
+      feedback = {
+        id: feedbackIndex >= 0 ? db.memberFeedback[feedbackIndex].id : `feedback_${randomUUID()}`,
+        memoId: memo.id,
+        memoVersion: event.memoVersion,
+        memberId: user.id,
+        memberNameSnapshot: user.name,
+        action: body.action,
+        deviceId: binding.deviceId,
+        updatedAt: event.createdAt,
+        createdAt: feedbackIndex >= 0 ? db.memberFeedback[feedbackIndex].createdAt : event.createdAt
+      };
+      if (feedbackIndex >= 0) db.memberFeedback[feedbackIndex] = feedback;
+      else db.memberFeedback.push(feedback);
+    }
     writeDb(db);
-    return send(res, 201, event);
+    return send(res, 201, feedback ? { ...event, feedback } : event);
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/quick-memos") {
+    const { user, binding } = requireMember(db, req);
+    const body = await parseBody(req);
+    const scope = body.scope === "organization" ? "organization" : "personal";
+    if (scope === "organization" && !canPublishOrganizationMemos(db, user)) {
+      return send(res, 403, { error: "仅管理组成员可以发布全员提醒" });
+    }
+    const includeTerms = normalizeRule(body.rule).includeTerms;
+    if (!includeTerms.length) return send(res, 400, { error: "请至少设置一个关键词" });
+    const invalidTerm = includeTerms.map(term => validateQuickSelection(term)).find(result => !result.ok);
+    if (invalidTerm?.reason === "too_long") return send(res, 400, { error: "每个关键词最多20个字符" });
+    if (invalidTerm?.reason === "too_short") return send(res, 400, { error: "每个关键词至少2个字符" });
+    if (invalidTerm?.reason === "line_break") return send(res, 400, { error: "关键词不允许换行" });
+    if (invalidTerm) return send(res, 400, { error: "关键词格式无效" });
+    if (!String(body.body || "").trim()) return send(res, 400, { error: "请填写提醒备注" });
+
+    const now = new Date();
+    const operationDefaults = body.type === "operation" ? {
+      startsAt: body.startsAt || now.toISOString(),
+      expiresAt: body.expiresAt || new Date(now.getTime() + 30 * 24 * 60 * 60_000).toISOString()
+    } : {};
+    const memo = cleanMemo({
+      ...body,
+      ...operationDefaults,
+      scope,
+      ownerId: scope === "personal" ? user.id : null,
+      deviceId: binding.deviceId,
+      folderId: scope === "personal" ? personalMemoFolderId(body.type, db) : null,
+      status: "published",
+      triggerMode: "page_match",
+      audienceType: scope === "organization" ? "all" : "members",
+      targetGroupIds: [],
+      targetUserIds: scope === "organization" ? [] : [user.id],
+      annotation: {
+        ...(body.annotation || {}),
+        template: body.annotation?.template || "light"
+      },
+      submittedByMemberId: user.id,
+      submittedByNameSnapshot: user.name,
+      createdByNameSnapshot: user.name,
+      actorName: user.name
+    }, {}, user.id);
+    validateMemoAudience(db, memo);
+    db.memos.push(memo);
+    appendSubmissionSnapshot(db, memo, {
+      entityType: "memo",
+      actorMemberId: user.id,
+      actorName: user.name,
+      source: "member",
+      requestId: body.requestId || null
+    });
+    if (scope === "organization") {
+      db.events.push({
+        id: `event_${randomUUID()}`,
+        eventId: `published:${memo.id}:${memo.version}`,
+        organizationId: db.meta.organizationId,
+        userId: user.id,
+        memberId: user.id,
+        memberNameSnapshot: user.name,
+        memoId: memo.id,
+        memoVersion: Number(memo.version || 1),
+        memoType: memo.type,
+        intensity: memo.intensity,
+        ruleId: memo.id,
+        deviceId: binding.deviceId,
+        domain: "quick-create",
+        pageBucket: "quick-create",
+        action: "published",
+        presentation: "context_menu",
+        anchorId: "",
+        occurredAt: memo.createdAt,
+        createdAt: memo.createdAt
+      });
+    }
+    appendAudit(db, { action: "created", entityType: "memo", entityId: memo.id, userId: user.id });
+    db.meta.version += 1;
+    writeDb(db);
+    if (scope === "organization") {
+      await dispatchPush(db, { type: "sync", memoId: memo.id, targetGroupIds: [], targetUserIds: [] });
+    }
+    return send(res, 201, memo);
   }
 
   if (req.method === "POST" && url.pathname === "/api/personal-memos") {
     const { user, binding } = requireMember(db, req);
     const body = await parseBody(req);
     const actorId = user.id;
-    const memo = cleanMemo({ ...body, scope: "personal", ownerId: user.id, deviceId: binding.deviceId, status: "published" }, {}, actorId);
+    const memo = cleanMemo({
+      ...body,
+      scope: "personal",
+      ownerId: user.id,
+      deviceId: binding.deviceId,
+      folderId: personalMemoFolderId(body.type, db),
+      status: "published",
+      submittedByMemberId: user.id,
+      submittedByNameSnapshot: user.name,
+      actorName: user.name
+    }, {}, actorId);
     db.memos.push(memo);
+    appendSubmissionSnapshot(db, memo, { entityType: "memo", actorMemberId: user.id, actorName: user.name, source: "member", requestId: body.requestId || null });
     appendAudit(db, { action: "created", entityType: "memo", entityId: memo.id, userId: actorId });
     db.meta.version += 1;
     writeDb(db);
@@ -1743,7 +2312,11 @@ async function handleApi(req, res, url) {
       db.memos.splice(index, 1);
     }
     else {
-      db.memos[index] = cleanMemo({ ...(await parseBody(req)), scope: "personal", ownerId: userId, deviceId: binding.deviceId }, db.memos[index], userId);
+      const body = await parseBody(req);
+      const updatedMemo = cleanMemo({ ...body, scope: "personal", ownerId: userId, deviceId: binding.deviceId, actorName: user.name }, db.memos[index], userId);
+      updatedMemo.folderId = personalMemoFolderId(updatedMemo.type, db);
+      db.memos[index] = updatedMemo;
+      appendSubmissionSnapshot(db, db.memos[index], { entityType: "memo", actorMemberId: user.id, actorName: user.name, source: "member", requestId: body.requestId || null });
       appendAudit(db, { action: "updated", entityType: "memo", entityId: db.memos[index].id, userId });
     }
     db.meta.version += 1;
@@ -1751,23 +2324,80 @@ async function handleApi(req, res, url) {
     return send(res, 200, req.method === "DELETE" ? { ok: true } : db.memos[index]);
   }
 
+  const memoFolderMoveMatch = url.pathname.match(/^\/api\/admin\/memos\/([^/]+)\/folder$/);
+  if (memoFolderMoveMatch && req.method === "PUT") {
+    const actorId = requestActor(req);
+    const memo = db.memos.find(item => item.id === memoFolderMoveMatch[1] && item.scope === "organization" && !item.systemGeneratedSupplier);
+    if (!memo) return send(res, 404, { error: "组织提醒不存在" });
+    const body = await parseBody(req);
+    const folderId = String(body.folderId || "").trim().slice(0, 120) || null;
+    if (folderId && !db.memoFolders.some(folder => folder.id === folderId && folder.status !== "archived" && folder.scope !== "personal")) {
+      return send(res, 400, { error: "选择的提醒文件夹不存在" });
+    }
+    const previousFolderId = memo.folderId || null;
+    if (previousFolderId === folderId) return send(res, 200, memo);
+    memo.folderId = folderId;
+    memo.version = Number(memo.version || 0) + 1;
+    memo.updatedBy = actorId;
+    memo.updatedAt = new Date().toISOString();
+    appendAudit(db, { action: "folder_changed", entityType: "memo", entityId: memo.id, userId: actorId, detail: { previousFolderId, folderId } });
+    db.meta.version += 1;
+    writeDb(db);
+    return send(res, 200, memo);
+  }
+
   const adminCollection = parts[2];
-  const collectionMap = { memos: "memos", tools: "tools", "page-groups": "pageGroups", suppliers: "suppliers" };
+  const collectionMap = { memos: "memos", tools: "tools", "page-groups": "pageGroups", suppliers: "suppliers", "memo-folders": "memoFolders" };
   if (parts[0] === "api" && parts[1] === "admin" && Object.hasOwn(collectionMap, adminCollection)) {
     const collection = collectionMap[adminCollection];
-    const cleaner = collection === "memos" ? cleanMemo : collection === "tools" ? cleanTool : collection === "suppliers" ? cleanSupplier : cleanPageGroup;
+    const cleaner = collection === "memos" ? cleanMemo : collection === "tools" ? cleanTool : collection === "suppliers" ? cleanSupplier : collection === "memoFolders" ? cleanMemoFolder : cleanPageGroup;
     const entityType = collection === "pageGroups" ? "pageGroup" : collection.slice(0, -1);
     const actorId = requestActor(req);
+    const actorName = db.users.find(user => user.id === actorId)?.name || actorId;
     if (req.method === "POST" && parts.length === 3) {
-      const item = cleaner(await parseBody(req), {}, actorId);
+      const body = await parseBody(req);
+      const item = cleaner(collection === "memos" ? { ...body, actorName } : body, {}, actorId);
+      if (collection === "memoFolders" && db.memoFolders.some(folder => folder.status !== "archived" && folder.name.toLocaleLowerCase("zh-CN") === item.name.toLocaleLowerCase("zh-CN"))) {
+        return send(res, 409, { error: "已存在同名提醒文件夹" });
+      }
       if (collection === "memos") {
+        validateMemoAudience(db, item);
         item.entityRefs = (item.entityRefs || []).map(ref => {
           const supplier = db.suppliers.find(candidate => candidate.id === ref.id && candidate.status !== "archived");
           if (!supplier) { const error = new Error("关联的供应商资料不存在"); error.statusCode = 400; throw error; }
           return { ...ref, displayName: supplier.companyName };
         });
+        if (item.folderId && !db.memoFolders.some(folder => folder.id === item.folderId && folder.status !== "archived" && folder.scope !== "personal")) {
+          const error = new Error("选择的提醒文件夹不存在");
+          error.statusCode = 400;
+          throw error;
+        }
       }
       db[collection].push(item);
+      appendSubmissionSnapshot(db, item, { entityType, actorMemberId: actorId, actorName, source: "admin", requestId: body.requestId || null });
+      if (collection === "memos" && item.status === "published") {
+        db.events.push({
+          id: `event_${randomUUID()}`,
+          eventId: `published:${item.id}:${item.version}`,
+          organizationId: db.meta.organizationId,
+          userId: actorId,
+          memberId: actorId,
+          memberNameSnapshot: actorName,
+          memoId: item.id,
+          memoVersion: Number(item.version || 1),
+          memoType: item.type,
+          intensity: item.intensity,
+          ruleId: item.id,
+          deviceId: null,
+          domain: "configuration",
+          pageBucket: "configuration",
+          action: "published",
+          presentation: "admin",
+          anchorId: "",
+          occurredAt: item.createdAt,
+          createdAt: item.createdAt
+        });
+      }
       appendAudit(db, { action: "created", entityType, entityId: item.id, userId: actorId });
       db.meta.version += 1;
       writeDb(db);
@@ -1776,6 +2406,7 @@ async function handleApi(req, res, url) {
     if (["PUT", "DELETE"].includes(req.method) && parts.length === 4) {
       const index = db[collection].findIndex(item => item.id === parts[3]);
       if (index < 0) return send(res, 404, { error: "内容不存在" });
+      const previousItem = JSON.parse(JSON.stringify(db[collection][index]));
       let deletedItem = null;
       if (req.method === "DELETE" && collection === "pageGroups") {
         const usedBy = db.memos.filter(item => item.rule?.pageGroupIds?.includes(parts[3]));
@@ -1792,17 +2423,60 @@ async function handleApi(req, res, url) {
         db[collection].splice(index, 1);
         for (const session of db.annotationSessions.filter(item => item.memoId === deletedItem.id && item.status === "pending")) session.status = "cancelled";
       }
+      else if (req.method === "DELETE" && collection === "memoFolders") {
+        if (db[collection][index].systemManaged) return send(res, 409, { error: "系统自动归类文件夹不能删除" });
+        db[collection].splice(index, 1);
+        for (const memo of db.memos) if (memo.folderId === parts[3]) memo.folderId = null;
+      }
       else if (req.method === "DELETE") db[collection][index] = { ...db[collection][index], status: "archived", updatedBy: actorId, updatedAt: new Date().toISOString() };
       else {
-        db[collection][index] = cleaner(await parseBody(req), db[collection][index], actorId);
+        if (collection === "memoFolders" && db[collection][index].systemManaged) return send(res, 409, { error: "系统自动归类文件夹不能编辑" });
+        const body = await parseBody(req);
+        const nextItem = cleaner(collection === "memos" ? { ...body, actorName } : body, db[collection][index], actorId);
+        if (collection === "memoFolders" && db.memoFolders.some((folder, folderIndex) => folderIndex !== index && folder.status !== "archived" && folder.name.toLocaleLowerCase("zh-CN") === nextItem.name.toLocaleLowerCase("zh-CN"))) {
+          return send(res, 409, { error: "已存在同名提醒文件夹" });
+        }
+        db[collection][index] = nextItem;
         if (collection === "memos") {
+          validateMemoAudience(db, db[collection][index]);
           db[collection][index].entityRefs = (db[collection][index].entityRefs || []).map(ref => {
             const supplier = db.suppliers.find(candidate => candidate.id === ref.id && candidate.status !== "archived");
             if (!supplier) { const error = new Error("关联的供应商资料不存在"); error.statusCode = 400; throw error; }
             return { ...ref, displayName: supplier.companyName };
           });
+          if (db[collection][index].folderId && !db.memoFolders.some(folder => folder.id === db[collection][index].folderId && folder.status !== "archived" && folder.scope !== "personal")) {
+            const error = new Error("选择的提醒文件夹不存在");
+            error.statusCode = 400;
+            throw error;
+          }
+        }
+        appendSubmissionSnapshot(db, db[collection][index], { entityType, actorMemberId: actorId, actorName, source: "admin", requestId: body.requestId || null });
+        if (collection === "memos" && db[collection][index].status === "published") {
+          const memo = db[collection][index];
+          db.events.push({
+            id: `event_${randomUUID()}`,
+            eventId: `published:${memo.id}:${memo.version}`,
+            organizationId: db.meta.organizationId,
+            userId: actorId,
+            memberId: actorId,
+            memberNameSnapshot: actorName,
+            memoId: memo.id,
+            memoVersion: Number(memo.version || 1),
+            memoType: memo.type,
+            intensity: memo.intensity,
+            ruleId: memo.id,
+            deviceId: null,
+            domain: "configuration",
+            pageBucket: "configuration",
+            action: "published",
+            presentation: "admin",
+            anchorId: "",
+            occurredAt: memo.updatedAt,
+            createdAt: memo.updatedAt
+          });
         }
       }
+      if (req.method === "DELETE") appendSubmissionSnapshot(db, previousItem, { entityType: `${entityType}Deleted`, actorMemberId: actorId, actorName, source: "admin" });
       appendAudit(db, { action: req.method === "DELETE" ? "deleted" : "updated", entityType, entityId: parts[3], userId: actorId });
       db.meta.version += 1;
       writeDb(db);
@@ -1810,7 +2484,7 @@ async function handleApi(req, res, url) {
         const delivery = await dispatchPush(db, { type: "sync", memoId: null, targetGroupIds: deletedItem.targetGroupIds, targetUserIds: deletedItem.targetUserIds });
         return send(res, 200, { ok: true, deletedId: deletedItem.id, sync: { targetCount: delivery.targetCount, acceptedCount: delivery.acceptedCount } });
       }
-      return send(res, 200, req.method === "DELETE" && ["pageGroups", "suppliers"].includes(collection) ? { ok: true } : db[collection][index]);
+      return send(res, 200, req.method === "DELETE" && ["pageGroups", "suppliers", "memoFolders"].includes(collection) ? { ok: true } : db[collection][index]);
     }
   }
 
@@ -1850,4 +2524,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, isActive, visibleTo, localDateKey, normalizeRule, normalizePageStrategy, normalizeAnnotation, normalizeAnnotationAnchor, normalizeAlarmSchedule, resolveMemoPageGroups, cleanMemo, cleanPersonalAlarm, cleanSupplier, cleanTool, cleanPageGroup, eventStats };
+module.exports = { server, isActive, visibleTo, canPublishOrganizationMemos, localDateKey, normalizeRule, normalizePageStrategy, normalizeAnnotation, normalizeAnnotationAnchor, normalizeAlarmSchedule, resolveMemoPageGroups, cleanMemo, cleanMemoFolder, cleanGroup, ensurePersonalMemoFolders, personalMemoFolderId, cleanPersonalAlarm, cleanSupplier, cleanTool, cleanPageGroup, eventStats, websiteFunnelStats, validateMemoAudience };

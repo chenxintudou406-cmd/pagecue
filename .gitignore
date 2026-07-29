@@ -10,6 +10,7 @@ dist/
 artifacts/
 downloads/
 data/backups/
+.tmp-import-*/
 design/icon-concepts/
 *.crx
 *.pem

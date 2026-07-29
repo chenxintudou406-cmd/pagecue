@@ -19,7 +19,7 @@
       <aside class="sidebar" aria-label="主导航">
         <div class="brand">
           <img id="brand-logo" class="brand-mark" alt="" />
-          <div class="brand-copy"><strong>页知</strong><small>PageCue · 3.1</small></div>
+          <div class="brand-copy"><strong>页知</strong><small>PageCue · 3.2</small></div>
         </div>
 
         <nav class="main-nav">
@@ -29,6 +29,9 @@
           </button>
           <button class="nav-item" data-view="memos">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5V4Zm3 4h8M8 12h8M8 16h5" /></svg><span>提醒管理</span>
+          </button>
+          <button class="nav-item" data-view="memo-folders">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3V7Zm0 0V5h7l2 2" /></svg><span>提醒文件夹</span>
           </button>
           <button class="nav-item" data-view="suppliers">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M6 20V7l6-3 6 3v13M9 10h2m2 0h2m-6 4h2m2 0h2m-4 6v-3h2v3" /></svg><span>供应商卡片</span>
@@ -67,6 +70,10 @@
               <div class="summary-side"><div class="summary-stats"><div><span>生效规则</span><strong id="hero-rule-count">0</strong></div><div><span>页面组</span><strong id="hero-page-count">0</strong></div></div><button id="push-extension-update" class="button secondary" type="button">通知检查新版本</button><small id="push-summary">商店发布新版后，可通知在线设备立即检查</small></div>
             </div>
             <div id="metric-grid" class="metric-grid" aria-label="关键指标"></div>
+            <div class="dashboard-grid funnel-dashboard">
+              <article class="panel panel-large"><div class="panel-head"><div><h2>提醒互动漏斗</h2><p>轻提醒单独统计；中、重提醒统计弹窗后的展开和互动</p></div></div><div id="funnel-overview" class="funnel-overview"></div></article>
+              <article class="panel"><div class="panel-head"><div><h2>网站效果</h2><p>只记录业务域名，不保存完整网址</p></div></div><div id="website-funnel" class="website-funnel"></div></article>
+            </div>
             <div class="dashboard-grid">
               <article class="panel panel-large"><div class="panel-head"><div><h2>正在生效的提醒</h2><p>最近发布的组织规则</p></div><button class="link-button" data-jump="memos">查看全部</button></div><div id="active-memos" class="compact-list"></div></article>
               <article class="panel"><div class="panel-head"><div><h2>成员覆盖</h2><p>按组织成员组统计</p></div></div><div id="group-overview" class="group-bars"></div></article>
@@ -74,7 +81,8 @@
           </section>
 
           <section id="view-memos" class="view" aria-labelledby="page-title">
-            <div class="toolbar"><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><span class="sr-only">搜索提醒</span><input id="memo-search" type="search" placeholder="搜索标题、正文或标签" /></label><label class="select-field"><select id="memo-type"><option value="all">知识与操作</option><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label class="select-field"><span class="sr-only">筛选状态</span><select id="memo-status"><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿</option></select></label></div>
+            <div class="memo-context-bar"><div><span>当前查看</span><strong id="memo-folder-current">全部提醒</strong><small id="memo-folder-current-count">0 条</small></div><button class="button ghost" type="button" data-jump="memo-folders">管理文件夹</button></div>
+            <div class="toolbar"><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><span class="sr-only">搜索提醒</span><input id="memo-search" type="search" placeholder="搜索标题、正文或标签" /></label><label class="select-field"><span class="sr-only">筛选文件夹</span><select id="memo-folder-filter"><option value="all">全部文件夹</option></select></label><label class="select-field"><select id="memo-type"><option value="all">知识与操作</option><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label class="select-field"><span class="sr-only">筛选状态</span><select id="memo-status"><option value="all">全部状态</option><option value="published">已发布</option><option value="expired">已到期</option><option value="draft">草稿</option></select></label></div>
             <div class="list-header" aria-hidden="true"><span>提醒内容</span><span>状态与范围</span><span>操作</span></div>
             <div id="memo-list" class="content-list"></div>
             <section class="activity-section" aria-labelledby="memo-activity-title">
@@ -83,8 +91,24 @@
             </section>
           </section>
 
+          <section id="view-memo-folders" class="view" aria-labelledby="page-title">
+            <div class="section-toolbar"><div><h2>按文件夹管理提醒</h2><p>文件夹只用于后台整理和查询，不改变网页匹配、成员范围或推送方式。</p></div><div class="toolbar-actions"><a id="bulk-import-template-download" class="button ghost" href="/admin/yezhi-bulk-import-template.xlsx" download="页知批量导入模板.xlsx">下载导入模板</a><button id="new-memo-folder" class="button primary" type="button">新建文件夹</button></div></div>
+            <div id="memo-folder-summary" class="folder-summary" aria-label="文件夹统计"></div>
+            <div class="folder-guide"><strong>如何使用</strong><span>新建文件夹 → 编辑提醒时选择文件夹，或在提醒列表中快速移动 → 点击“查看提醒”按文件夹查询。</span></div>
+            <div id="memo-folder-list" class="memo-folder-list">
+              <button class="memo-folder-card system" type="button" data-open-memo-folder="all"><strong>全部提醒</strong><span>查看所有组织提醒</span></button>
+            </div>
+          </section>
+
           <section id="view-pagegroups" class="view" aria-labelledby="page-title">
             <div class="section-toolbar"><div><h2>复用业务页面范围</h2><p>一个页面组可以包含多个网址规则，并被多条提醒共同使用。</p></div><button id="new-page-group" class="button secondary">新建页面组</button></div>
+            <article class="panel">
+              <div class="panel-head"><div><h2>组织不提醒页面</h2><p>默认大部分网页都可本地匹配；这里填写公司统一不扫描、不高亮、不提醒的网址。</p></div></div>
+              <form id="excluded-sites-form" class="form-grid">
+                <label class="wide">不提醒网址规则<textarea name="excludedSitePatterns" rows="5" placeholder="每行一个，例如：https://mail.example.com/*&#10;本地文件夹：file:///C:/Users/44982/Documents/私人资料/*"></textarea><small>支持 * 通配符。命中后插件会停止扫描该页面；本地文件仍需要用户在扩展详情页打开文件访问权限。</small></label>
+                <div class="dialog-actions wide"><button type="submit" class="button primary">保存不提醒页面</button></div>
+              </form>
+            </article>
             <div id="page-group-list" class="page-group-list"></div>
           </section>
 
@@ -110,7 +134,7 @@
             <div class="account-table-head" aria-hidden="true"><span>成员账号</span><span>所属组别</span><span>绑定设备</span><span>最近登录</span><span>操作</span></div>
             <div id="account-list" class="account-list"></div>
             <section class="invitation-management" aria-labelledby="invitation-management-title">
-              <div class="section-toolbar"><div><h2 id="invitation-management-title">邀请码管理</h2><p>查看邀请码状态，复制仍有效的邀请码，或删除不再需要的记录。</p></div><label class="select-field"><span class="sr-only">筛选邀请码</span><select id="invitation-status-filter"><option value="all">全部邀请码</option><option value="pending">待使用</option><option value="used">已使用</option><option value="expired">已过期</option></select></label></div>
+              <div class="section-toolbar"><div><h2 id="invitation-management-title">邀请码管理</h2><p>只保留仍可使用的邀请码；已使用、已过期或撤销的记录会清理掉，绑定事件仍保留。</p></div><div class="toolbar-actions"><button id="clear-inactive-invitations" class="button ghost" type="button">清理失效邀请码</button><label class="select-field"><span class="sr-only">筛选邀请码</span><select id="invitation-status-filter"><option value="pending">待使用</option><option value="all">全部邀请码</option><option value="used">已使用</option><option value="expired">已过期</option></select></label></div></div>
               <div class="invitation-table-head" aria-hidden="true"><span>成员</span><span>邀请码</span><span>状态</span><span>创建与到期</span><span>操作</span></div>
               <div id="invitation-management-list" class="invitation-management-list"></div>
             </section>
@@ -119,7 +143,7 @@
           <section id="view-groups" class="view" aria-labelledby="page-title">
             <div class="section-toolbar"><div><h2>成员、邀请码与分组</h2><p>邀请码绑定真实成员与设备，停用成员或撤销设备后权限立即失效。</p></div><button id="new-member" class="button secondary">新建成员</button></div>
             <div id="member-list" class="content-list"></div>
-            <div class="section-toolbar"><div><h2>成员分组</h2><p>组织提醒和工具链接可面向全体、指定人员或成员组。</p></div></div>
+            <div class="section-toolbar"><div><h2>成员分组</h2><p>组织提醒和工具链接可面向全体、指定人员或成员组。</p></div><button id="new-group" class="button secondary" type="button">新建分组</button></div>
             <div id="group-list" class="group-grid"></div>
           </section>
         </main>
@@ -131,14 +155,17 @@
         <div class="dialog-head"><div><span>组织提醒</span><h2 id="memo-dialog-title">新建组织提醒</h2></div><button type="button" class="icon-button" data-close="memo-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
         <input type="hidden" name="id" />
         <div class="form-sections">
-          <section class="form-section"><div class="form-section-title"><span>1</span><div><h3>提醒内容</h3><p>先选择知识或操作提醒</p></div></div><div class="form-grid"><label>提醒类型<select name="type"><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label class="wide">标题 <em>必填</em><input name="title" maxlength="120" required placeholder="例如：报价页面提醒" /></label><label class="wide">正文<textarea name="body" rows="5" placeholder="支持基础 Markdown"></textarea></label></div></section>
-          <section class="form-section"><div class="form-section-title"><span>2</span><div><h3>触发条件</h3><p>设置页面范围和关键词规则</p></div></div><div class="form-grid">
+          <section class="form-section"><div class="form-section-title"><span>1</span><div><h3>提醒内容</h3><p>先选择知识或操作提醒</p></div></div><div class="form-grid"><label>提醒类型<select name="type"><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label><label>所属文件夹<select name="folderId"><option value="">未分组</option></select></label><label class="wide">标题 <em>必填</em><input name="title" maxlength="120" required placeholder="例如：报价页面提醒" /></label><label class="wide">正文<textarea name="body" rows="5" placeholder="支持基础 Markdown"></textarea></label></div></section>
+          <section class="form-section"><div class="form-section-title"><span>2</span><div><h3>触发条件</h3><p>按页面匹配，或向目标成员广播一条重度提醒</p></div></div><div class="form-grid">
+            <fieldset class="wide scope-field"><legend>触发方式</legend><div class="scope-options"><label><input type="radio" name="triggerMode" value="page_match" checked /><span><b>页面匹配</b><small>关键词或页面规则命中后出现</small></span></label><label><input type="radio" name="triggerMode" value="broadcast" /><span><b>强提醒广播</b><small>不依赖关键词，在可用网页中主动出现</small></span></label></div></fieldset>
+            <div class="wide form-grid" data-page-trigger-fields>
             <fieldset class="wide scope-field"><legend>生效页面</legend><div class="scope-options"><label><input type="radio" name="pageScope" value="global" checked /><span><b>全局页面</b><small>所有已授权网页</small></span></label><label><input type="radio" name="pageScope" value="page_groups" /><span><b>特定页面组</b><small>仅所选业务页面</small></span></label></div><div id="page-group-picker" class="page-group-picker" hidden><span class="field-label">选择页面组，可多选</span><div id="memo-page-group-options" class="checkbox-grid"></div></div></fieldset>
-            <label>包含关键词 <em>必填</em><textarea name="includeTerms" rows="3" placeholder="每行一个" required></textarea><small>满足关键词关系时触发提醒</small></label>
+            <label>包含关键词 <em>必填</em><textarea name="includeTerms" rows="3" placeholder="每行一个"></textarea><small>满足关键词关系时触发提醒</small></label>
             <label>排除关键词<textarea name="excludeTerms" rows="3" placeholder="每行一个，可不填"></textarea><small>出现任意排除词时不触发</small></label>
             <label>关键词关系<select name="operator"><option value="AND">全部包含（AND）</option><option value="OR">任一包含（OR）</option></select></label>
             <label>冷却时间<input type="number" name="cooldownMinutes" min="1" max="10080" value="30" /><small>单位：分钟</small></label>
             <div class="wide inline-checks"><label><input type="checkbox" name="caseSensitive" />区分大小写</label><label><input type="checkbox" name="useRegex" />使用正则表达式</label></div>
+            </div>
           </div></section>
           <section class="form-section annotation-section"><div class="form-section-title"><span>3</span><div><h3>批注呈现</h3><p>整条提醒统一使用一种模板</p></div></div><div class="form-grid">
             <fieldset class="wide template-field"><legend>选择批注模板</legend><div class="template-options">
@@ -149,9 +176,29 @@
             <label class="wide">需要高亮的关键词<textarea name="keywordTerms" rows="3" placeholder="每行一个；留空时高亮全部包含关键词"></textarea><small>这里只控制页面标记，不改变触发规则。</small></label>
             <div class="wide anchor-editor"><div class="anchor-editor-head"><div><b>页面元素锚点</b><small>可绑定输入框、按钮、内容块或列表同一行内的元素</small></div><span id="anchor-count" class="pill">0 / 20</span></div><div id="memo-anchor-list" class="anchor-list"><div class="empty">保存提醒后可在真实网页中点选元素</div></div></div>
           </div></section>
-          <section class="form-section"><div class="form-section-title"><span>4</span><div><h3>发布设置</h3><p>控制接收成员、有效期和资料链接</p></div></div><div class="form-grid"><label>目标成员组<select name="targetGroupId"></select></label><label>目标人员<select name="targetUserIds" multiple size="4"></select></label><label>提醒级别<select name="priority"><option value="normal">普通提醒</option><option value="important">重要提醒</option></select></label><label>状态<select name="status"><option value="published">立即发布</option><option value="draft">保存为草稿</option></select></label><label data-operation-start hidden>开始时间<input type="datetime-local" name="startsAt" /></label><label>到期时间<input type="datetime-local" name="expiresAt" /></label><label class="wide">关联供应商<select name="supplierId"><option value="">不关联供应商卡片</option></select><small>成员点击提醒中的“查看供应商”后，才会按权限加载详情。</small></label><label class="wide">标签<input name="tags" placeholder="销售, 报价, SOP" /></label><label class="wide">超链接（每行：名称 | https://地址）<textarea name="links" rows="4" placeholder="报价SOP | https://example.com/sop"></textarea></label></div></section>
+          <section class="form-section"><div class="form-section-title"><span>4</span><div><h3>发布设置</h3><p>控制谁被提醒；不设置负责人或处理人</p></div></div><div class="form-grid">
+            <fieldset class="wide scope-field"><legend>谁会收到</legend><div class="scope-options audience-options"><label><input type="radio" name="audienceType" value="all" checked /><span><b>全体成员</b><small>全部有效成员</small></span></label><label><input type="radio" name="audienceType" value="groups" /><span><b>指定成员组</b><small>按当前组成员投放</small></span></label><label><input type="radio" name="audienceType" value="members" /><span><b>指定成员</b><small>只提醒选中的成员</small></span></label></div></fieldset>
+            <label class="wide" data-audience-groups hidden>目标成员组<select name="targetGroupIds" multiple size="4"></select></label>
+            <label class="wide" data-audience-members hidden>目标成员<select name="targetUserIds" multiple size="5"></select></label>
+            <label>提醒级别<select name="priority"><option value="normal">普通提醒</option><option value="important">重要提醒</option></select></label><label>状态<select name="status"><option value="published">立即发布</option><option value="draft">保存为草稿</option></select></label>
+            <label data-operation-window>开始日期<input type="date" name="startsAtDate" /></label><label data-operation-window>有效期<select name="durationPreset"><option value="7">7天</option><option value="30" selected>1个月</option><option value="90">3个月</option><option value="180">6个月</option><option value="365">1年</option></select></label>
+            <label class="wide">关联供应商<select name="supplierId"><option value="">不关联供应商卡片</option></select><small>成员点击提醒中的“查看供应商”后，才会按权限加载详情。</small></label><label class="wide">标签<input name="tags" placeholder="销售, 报价, SOP" /></label><label class="wide">超链接（每行：名称 | https://地址）<textarea name="links" rows="4" placeholder="报价SOP | https://example.com/sop"></textarea></label>
+          </div></section>
         </div>
         <div class="dialog-actions"><button type="button" class="button ghost" data-close="memo-dialog">取消</button><button type="submit" class="button secondary" data-save-only="true">仅保存</button><button type="submit" class="button secondary" data-annotate="true">保存并在网页中标记</button><button type="submit" class="button primary" data-publish="true">发布并推送</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="memo-folder-dialog" class="modal-dialog">
+      <form id="memo-folder-form" method="dialog">
+        <div class="dialog-head"><div><span>知识库结构</span><h2 id="memo-folder-dialog-title">新建提醒文件夹</h2></div><button type="button" class="icon-button" data-close="memo-folder-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
+        <input type="hidden" name="id" />
+        <div class="modal-body form-grid">
+          <label class="wide">文件夹名称 <em>必填</em><input name="name" maxlength="80" required placeholder="例如：报价规则、供应商知识、危化品注意事项" /></label>
+          <label class="wide">说明<textarea name="description" rows="3" maxlength="300" placeholder="给管理员看的归类说明，可不填"></textarea></label>
+          <label>排序值<input name="sortOrder" type="number" min="0" max="9999" value="0" /><small>数字越小越靠前</small></label>
+        </div>
+        <div class="dialog-actions"><button type="button" class="button ghost" data-close="memo-folder-dialog">取消</button><button type="submit" class="button primary">保存文件夹</button></div>
       </form>
     </dialog>
 
@@ -184,7 +231,7 @@
     </dialog>
 
     <dialog id="page-group-dialog" class="modal-dialog">
-      <form id="page-group-form" method="dialog"><div class="dialog-head"><div><span>页面范围</span><h2 id="page-group-dialog-title">新建页面组</h2></div><button type="button" class="icon-button" data-close="page-group-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><input type="hidden" name="id" /><div class="modal-body form-grid"><label class="wide">页面组名称 <em>必填</em><input name="name" maxlength="80" required placeholder="例如：询单管理页面" /></label><label class="wide">用途说明<input name="description" maxlength="300" placeholder="说明这组页面对应的业务场景" /></label><label class="wide">网址规则 <em>必填</em><textarea name="sitePatterns" rows="6" required placeholder="每行一个，例如：https://www.example.com/*"></textarea><small>支持 * 通配符</small></label></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="page-group-dialog">取消</button><button type="submit" class="button primary">保存页面组</button></div></form>
+      <form id="page-group-form" method="dialog"><div class="dialog-head"><div><span>页面范围</span><h2 id="page-group-dialog-title">新建页面组</h2></div><button type="button" class="icon-button" data-close="page-group-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><input type="hidden" name="id" /><div class="modal-body form-grid"><label class="wide">页面组名称 <em>必填</em><input name="name" maxlength="80" required placeholder="例如：询单管理页面" /></label><label class="wide">用途说明<input name="description" maxlength="300" placeholder="说明这组页面对应的业务场景" /></label><label class="wide">网址规则 <em>必填</em><textarea name="sitePatterns" rows="6" required placeholder="每行一个，例如：https://www.example.com/*&#10;本地文件夹：file:///C:/Users/44982/Documents/*"></textarea><small>支持 * 通配符；本地文件需用户在扩展详情页打开“允许访问文件网址”。</small></label></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="page-group-dialog">取消</button><button type="submit" class="button primary">保存页面组</button></div></form>
     </dialog>
 
     <dialog id="strategy-test-dialog" class="modal-dialog">
@@ -207,10 +254,12 @@
 
     <dialog id="member-dialog" class="modal-dialog"><form id="member-form"><div class="dialog-head"><div><span>成员权限</span><h2 id="member-dialog-title">新建成员</h2></div><button type="button" class="icon-button" data-close="member-dialog" aria-label="关闭">×</button></div><input type="hidden" name="id"><div class="modal-body form-grid"><label class="wide">成员姓名<input name="name" required maxlength="120"></label><label class="wide">所属分组<select name="groupIds" multiple size="5"></select></label><label>状态<select name="status"><option value="active">正常</option><option value="disabled">停用</option></select></label></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="member-dialog">取消</button><button class="button primary">保存成员</button></div></form></dialog>
 
+    <dialog id="group-dialog" class="modal-dialog"><form id="group-form"><div class="dialog-head"><div><span>成员权限</span><h2 id="group-dialog-title">新建分组</h2></div><button type="button" class="icon-button" data-close="group-dialog" aria-label="关闭">×</button></div><input type="hidden" name="id"><div class="modal-body form-grid"><label class="wide">分组名称 <em>必填</em><input name="name" required maxlength="80" placeholder="例如：采购组"></label><label class="wide">分组说明<textarea name="description" rows="3" maxlength="300" placeholder="说明该组的成员范围或使用场景"></textarea></label><label class="wide inline-checks"><input type="checkbox" name="canPublishOrganizationMemos"><span><b>允许发布全员提醒</b><small>该组成员可从网页右键创建全体成员可见的提醒；未勾选时只能创建自己的提醒。</small></span></label></div><div class="dialog-actions"><button type="button" class="button ghost" data-close="group-dialog">取消</button><button class="button primary">保存分组</button></div></form></dialog>
+
     <dialog id="account-detail-dialog" class="drawer-dialog account-detail-dialog"><div class="account-detail-shell"><div class="dialog-head"><div><span>账号绑定详情</span><h2 id="account-detail-title">成员账号</h2></div><button type="button" class="icon-button" data-close="account-detail-dialog" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><div id="account-detail-body" class="account-detail-body"></div></div></dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <noscript><p class="noscript">管理后台需要启用 JavaScript。</p></noscript>
-    <script>document.getElementById("brand-logo").src = adminAsset("pagecue-logo.png"); const adminScript = document.createElement("script"); adminScript.src = adminAsset("app.js"); document.body.appendChild(adminScript);</script>
+    <script>document.getElementById("brand-logo").src = adminAsset("pagecue-logo.png"); document.getElementById("bulk-import-template-download").href = adminAsset("yezhi-bulk-import-template.xlsx"); const adminScript = document.createElement("script"); adminScript.src = adminAsset("app.js"); document.body.appendChild(adminScript);</script>
   </body>
 </html>

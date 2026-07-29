@@ -1,4 +1,4 @@
-const state = { data: null, view: "overview", editingMemo: null, editingSupplier: null, editingTool: null, editingPageGroup: null, editingMember: null, selectedAccountId: null, strategyTestPoll: null, annotationSessionPoll: null };
+const state = { data: null, view: "overview", editingMemo: null, editingMemoFolder: null, editingSupplier: null, editingTool: null, editingPageGroup: null, editingMember: null, editingGroup: null, selectedAccountId: null, strategyTestPoll: null, annotationSessionPoll: null };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8787" : "";
@@ -76,6 +76,24 @@ function linksText(links = []) { return links.map(link => `${link.label} | ${lin
 function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 3200); }
 function formatPercent(value) { return `${Math.round((value || 0) * 100)}%`; }
 function annotationTemplateLabel(template) { return ({ light: "轻", standard: "中", medium: "中", strong: "重", heavy: "重" })[template] || "中"; }
+function dateInputValue(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+function localDateStartIso(value) {
+  const fallback = dateInputValue();
+  const [year, month, day] = String(value || fallback).split("-").map(Number);
+  return new Date(year || new Date().getFullYear(), (month || 1) - 1, day || 1, 0, 0, 0, 0).toISOString();
+}
+function addDaysIso(startIso, days) {
+  const date = new Date(startIso);
+  date.setDate(date.getDate() + Number(days || 30));
+  return date.toISOString();
+}
+function durationPresetFromDates(startsAt, expiresAt) {
+  const days = Math.round((Date.parse(expiresAt || 0) - Date.parse(startsAt || 0)) / 86_400_000);
+  return [7, 30, 90, 180, 365].reduce((best, current) => Math.abs(current - days) < Math.abs(best - days) ? current : best, 30);
+}
 function setSubmitting(form, loading, label = "保存中") {
   const buttons = [...form.querySelectorAll('[type="submit"]')];
   if (!buttons.length) return;
@@ -93,6 +111,8 @@ function renderLoading() {
   $("#metric-grid").innerHTML = Array.from({ length: 4 }, () => `<article class="metric skeleton"><span></span><strong></strong><small></small></article>`).join("");
   $("#active-memos").innerHTML = `<div class="loading-rows"><i></i><i></i><i></i></div>`;
   $("#group-overview").innerHTML = `<div class="loading-rows"><i></i><i></i></div>`;
+  $("#funnel-overview").innerHTML = `<div class="loading-rows"><i></i><i></i><i></i></div>`;
+  $("#website-funnel").innerHTML = `<div class="loading-rows"><i></i><i></i></div>`;
 }
 
 async function load() {
@@ -110,12 +130,14 @@ async function load() {
 }
 
 function renderAll() {
-  renderOverview(); renderMemos(); renderMemoActivity(); renderSuppliers(); renderTools(); renderGroups(); renderMembers(); renderAccounts(); renderInvitations(); renderPageGroups(); decoratePageGroupStrategies(); fillGroupOptions(); fillPageGroupOptions(); fillSupplierOptions();
+  fillMemoFolderOptions(); renderOverview(); renderMemoFolders(); renderMemos(); renderMemoActivity(); renderSuppliers(); renderTools(); renderGroups(); renderMembers(); renderAccounts(); renderInvitations(); renderExcludedSites(); renderPageGroups(); decoratePageGroupStrategies(); fillGroupOptions(); fillPageGroupOptions(); fillSupplierOptions();
 }
 
 function renderOverview() {
   const { stats, memos, groups } = state.data;
-  $("#hero-rule-count").textContent = memos.filter(item => item.scope === "organization" && item.status === "published").length;
+  const now = Date.now();
+  const activeMemos = memos.filter(item => item.scope === "organization" && item.status === "published" && (!item.startsAt || Date.parse(item.startsAt) <= now) && (!item.expiresAt || Date.parse(item.expiresAt) > now));
+  $("#hero-rule-count").textContent = activeMemos.length;
   $("#hero-page-count").textContent = state.data.pageGroups.length;
   $("#push-summary").textContent = state.data.pushStats?.configured
     ? `${state.data.pushStats.activeSubscriptions} 台设备已订阅实时推送`
@@ -123,17 +145,98 @@ function renderOverview() {
   $("#push-extension-update").disabled = !state.data.pushStats?.configured || !state.data.pushStats?.activeSubscriptions;
   $("#push-extension-update").textContent = state.data.pushStats?.configured ? "通知检查新版本" : "等待实时推送配置";
   const metrics = [
-    ["规则触发", stats.triggered, "仅记录命中事件"],
-    ["提醒打开率", formatPercent(stats.openRate), `${stats.opened} 次主动查看`],
-    ["有用反馈率", formatPercent(stats.helpfulRate), `${stats.helpful + stats.unhelpful} 条反馈`],
-    ["生效内容", memos.filter(item => item.status === "published").length, "组织与个人备忘"],
+    ["规则命中", stats.matched, "只记录业务域名"],
+    ["提醒展开", stats.expanded, `${stats.highlight_opened + stats.popup_shown} 次展示后互动`],
+    ["赞 / 踩", `${stats.feedback_up} / ${stats.feedback_down}`, "成员可在卡片直接反馈"],
+    ["生效内容", activeMemos.length, "已到期内容仍保留历史"],
     ["实时推送设备", state.data.pushStats?.activeSubscriptions || 0, state.data.pushStats?.configured ? "Web Push 已启用" : "每 60 分钟兜底同步"]
   ];
   $("#metric-grid").innerHTML = metrics.map(([label, value, detail]) => `<article class="metric"><span>${label}</span><strong>${value}</strong><small>${detail}</small></article>`).join("");
-  const active = memos.filter(item => item.status === "published" && item.scope === "organization").slice(0, 4);
+  const active = activeMemos.slice(0, 4);
   $("#active-memos").innerHTML = active.length ? active.map(item => `<div class="compact-item"><i class="status-dot"></i><div><strong>${escapeHtml(item.title)}</strong><small>${item.type === "operation" ? "操作" : "知识"} · ${item.rule.includeTerms.length} 个关键词 · ${pageScopeLabel(item.rule)}</small></div><span class="badge">${annotationTemplateLabel(item.annotation?.template)}</span></div>`).join("") : `<div class="empty">还没有已发布提醒</div>`;
   const max = Math.max(...groups.map(group => group.memberCount), 1);
   $("#group-overview").innerHTML = groups.map(group => `<div class="group-row"><div class="group-label"><span>${escapeHtml(group.name)}</span><b>${group.memberCount} 人</b></div><div class="bar"><i style="width:${Math.max(12, group.memberCount / max * 100)}%"></i></div></div>`).join("");
+  renderFunnels();
+}
+
+function funnelValue(funnel, action) {
+  return funnel?.actions?.[action] || { events: 0, members: 0 };
+}
+
+function renderFunnels() {
+  const funnels = state.data?.funnels || {};
+  const overall = funnels.overall || {};
+  const light = funnels.light || {};
+  const mediumHeavy = funnels.mediumHeavy || {};
+  const published = funnelValue(overall, "published");
+  const matched = funnelValue(overall, "matched");
+  const expanded = funnelValue(overall, "expanded");
+  const interaction = overall.anyInteraction || { events: 0, members: 0 };
+  const rows = [
+    ["轻提醒", funnelValue(light, "highlight_shown"), funnelValue(light, "highlight_opened"), light.anyInteraction || { events: 0, members: 0 }],
+    ["中/重提醒", funnelValue(mediumHeavy, "popup_shown"), funnelValue(mediumHeavy, "expanded"), mediumHeavy.anyInteraction || { events: 0, members: 0 }]
+  ];
+  const branches = [
+    ["打开链接", "link_opened"],
+    ["查看评论", "comment_opened"],
+    ["发表评论", "comment_submitted"],
+    ["操作完成", "operation_completed"],
+    ["赞", "feedback_up"],
+    ["踩", "feedback_down"]
+  ];
+  $("#funnel-overview").innerHTML = `<div class="funnel-row overall"><strong>总路径</strong><span><b>${published.events}</b><small>发布设置</small></span><i>→</i><span><b>${matched.events}</b><small>命中提醒</small></span><i>→</i><span><b>${expanded.events}</b><small>点击展开</small></span><i>→</i><span><b>${interaction.events}</b><small>操作互动</small></span></div>${rows.map(([label, shown, opened, interacted]) => `<div class="funnel-row"><strong>${label}</strong><span><b>${shown.members}</b><small>展示成员</small></span><i>→</i><span><b>${opened.members}</b><small>展开成员</small></span><i>→</i><span><b>${interacted.members}</b><small>互动成员</small></span><em>${shown.members ? Math.round(interacted.members / shown.members * 100) : 0}%</em></div>`).join("")}<div class="interaction-branches">${branches.map(([label, action]) => { const value = funnelValue(overall, action); return `<span><small>${label}</small><b>${value.events}</b><em>${value.members} 人</em></span>`; }).join("")}</div>`;
+  const websites = funnels.websites || [];
+  $("#website-funnel").innerHTML = websites.length ? websites.slice(0, 8).map(item => {
+    const matched = funnelValue(item, "matched");
+    const interaction = item.anyInteraction || { events: 0, members: 0 };
+    return `<div class="website-funnel-row"><div><strong>${escapeHtml(item.pageBucket)}</strong><small>${matched.events} 次命中 · ${matched.members} 人</small></div><b>${matched.members ? Math.round(interaction.members / matched.members * 100) : 0}%<small>互动率</small></b></div>`;
+  }).join("") : `<div class="empty">还没有网站互动数据</div>`;
+}
+
+function activeMemoFolders() {
+  return [...(state.data?.memoFolders || [])].filter(folder => folder.status !== "archived").sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.name).localeCompare(String(b.name), "zh-CN"));
+}
+
+function memoFolderName(folderId) {
+  return activeMemoFolders().find(folder => folder.id === folderId)?.name || "未分组";
+}
+
+function memoFolderSelectOptions(selected = "") {
+  return `<option value="">未分组</option>${activeMemoFolders().filter(folder => folder.scope !== "personal").map(folder => `<option value="${escapeHtml(folder.id)}" ${folder.id === selected ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}`;
+}
+
+function renderMemoFolders() {
+  if (!state.data) return;
+  const folders = activeMemoFolders();
+  const managedMemos = (state.data.memos || []).filter(memo => !memo.systemGeneratedSupplier);
+  const counts = new Map();
+  for (const memo of managedMemos) {
+    counts.set(memo.folderId || "", (counts.get(memo.folderId || "") || 0) + 1);
+  }
+  $("#memo-folder-summary").innerHTML = [
+    ["文件夹", folders.length, "可继续新增"],
+    ["已归类", managedMemos.filter(memo => memo.folderId).length, "条个人或组织提醒"],
+    ["未分组", counts.get("") || 0, "条待整理"]
+  ].map(([label, value, detail]) => `<article><span>${label}</span><strong>${value}</strong><small>${detail}</small></article>`).join("");
+  $("#memo-folder-list").innerHTML = [
+    { id: "all", name: "全部组织提醒", description: "查看所有管理员发布的组织提醒", system: true, count: managedMemos.filter(memo => memo.scope === "organization").length },
+    { id: "", name: "未分组", description: "还没有归入文件夹的组织提醒", system: true, sortOrder: -1 },
+    ...folders
+  ].map(folder => `<article class="memo-folder-card ${folder.system || folder.systemManaged ? "system" : ""}"><button class="memo-folder-open" type="button" data-open-memo-folder="${escapeHtml(folder.id)}"><span class="folder-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10H3V7Z" /></svg></span><span class="folder-copy"><strong>${escapeHtml(folder.name)}</strong><small>${escapeHtml(folder.description || "暂无说明")}</small><b>${folder.count ?? counts.get(folder.id) ?? 0} 条提醒${folder.systemManaged ? " · 自动归类" : ""}</b></span><span class="folder-enter">查看提醒 →</span></button>${folder.system || folder.systemManaged ? "" : `<div class="card-actions"><button class="icon-button" title="编辑" aria-label="编辑 ${escapeHtml(folder.name)}" data-edit-memo-folder="${escapeHtml(folder.id)}">${icons.edit}</button><button class="icon-button danger" title="删除" aria-label="删除 ${escapeHtml(folder.name)}" data-delete-memo-folder="${escapeHtml(folder.id)}">${icons.trash}</button></div>`}</article>`).join("");
+}
+
+function fillMemoFolderOptions(selected = "") {
+  if (!state.data) return;
+  const folders = activeMemoFolders();
+  const options = memoFolderSelectOptions(selected);
+  const memoSelect = $("#memo-form [name=folderId]");
+  if (memoSelect) { memoSelect.innerHTML = options; memoSelect.value = selected || ""; }
+  const filter = $("#memo-folder-filter");
+  if (filter) {
+    const previous = filter.value || "all";
+    filter.innerHTML = `<option value="all">全部文件夹</option><option value="">未分组</option>${folders.map(folder => `<option value="${escapeHtml(folder.id)}">${escapeHtml(folder.name)}</option>`).join("")}`;
+    filter.value = [...filter.options].some(option => option.value === previous) ? previous : "all";
+  }
 }
 
 function renderMemos() {
@@ -141,14 +244,33 @@ function renderMemos() {
   const query = ($("#memo-search").value || "").toLowerCase();
   const status = $("#memo-status").value;
   const type = $("#memo-type").value;
-  const memos = state.data.memos.filter(item => item.scope === "organization" && (type === "all" || item.type === type) && (status === "all" || item.status === status) && `${item.title} ${item.body} ${item.tags.join(" ")}`.toLowerCase().includes(query));
+  const folder = $("#memo-folder-filter")?.value ?? "all";
+  const selectedFolder = activeMemoFolders().find(item => item.id === folder);
+  const visibleScope = selectedFolder?.scope === "personal" ? "personal" : "organization";
+  const isExpired = item => Boolean(item.expiresAt && Date.parse(item.expiresAt) <= Date.now());
+  const statusMatches = item => status === "all" || (status === "expired" ? isExpired(item) : item.status === status && !isExpired(item));
+  const memos = state.data.memos.filter(item => item.scope === visibleScope && (type === "all" || item.type === type) && statusMatches(item) && (folder === "all" || (item.folderId || "") === folder) && `${item.title} ${item.body} ${(item.tags || []).join(" ")} ${memoFolderName(item.folderId)}`.toLowerCase().includes(query));
+  $("#memo-folder-current").textContent = folder === "all" ? "全部组织提醒" : memoFolderName(folder);
+  $("#memo-folder-current-count").textContent = `${memos.length} 条`;
   $("#memo-list").innerHTML = memos.length ? memos.map(item => {
-    const groupNames = item.targetGroupIds.length ? item.targetGroupIds.map(id => state.data.groups.find(group => group.id === id)?.name || id).join("、") : "全体成员";
+    const personal = item.scope === "personal";
+    const ownerName = state.data.users.find(user => user.id === item.ownerId)?.name || item.ownerId || "未知成员";
+    const audienceNames = personal
+      ? `个人 · ${ownerName}`
+      : item.audienceType === "members"
+      ? (item.targetUserIds || []).map(id => state.data.users.find(user => user.id === id)?.name || id).join("、")
+      : item.audienceType === "groups"
+        ? (item.targetGroupIds || []).map(id => state.data.groups.find(group => group.id === id)?.name || id).join("、")
+        : "全体成员";
     const legacyArchived = item.status === "archived";
-    const editAction = legacyArchived ? "" : `<button class="icon-button" title="编辑" aria-label="编辑 ${escapeHtml(item.title)}" data-edit-memo="${item.id}">${icons.edit}</button>`;
+    const editAction = personal || legacyArchived ? "" : `<button class="icon-button" title="编辑" aria-label="编辑 ${escapeHtml(item.title)}" data-edit-memo="${item.id}">${icons.edit}</button>`;
     const supplier = (item.entityRefs || []).find(ref => ref.type === "supplier");
-    return `<article class="content-card"><div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(truncate(item.body.replace(/[*#`]/g, ""), 150))}</p><div class="content-meta"><span class="pill">${item.status === "published" ? "已发布" : item.status === "draft" ? "草稿" : "历史停用"}</span><span class="pill ${item.annotation?.template === "strong" ? "important" : ""}">${annotationTemplateLabel(item.annotation?.template)}</span>${supplier ? `<span class="pill supplier-pill">供应商 · ${escapeHtml(supplier.displayName || supplier.id)}</span>` : ""}<span class="pill">${item.annotation?.anchors?.length || 0} 个元素锚点</span><span class="pill">${escapeHtml(pageScopeLabel(item.rule))}</span><span class="pill">${escapeHtml(groupNames)}</span><span class="pill">${escapeHtml(item.rule.includeTerms.join(" / ") || "无关键词")}</span></div></div><div class="card-actions">${editAction}<button class="icon-button danger" title="删除" aria-label="删除 ${escapeHtml(item.title)}" data-delete-memo="${item.id}">${icons.trash}</button></div></article>`;
-  }).join("") : `<div class="empty">没有符合条件的组织提醒</div>`;
+    const lifecycle = isExpired(item) ? "已到期" : item.status === "published" ? "已发布" : item.status === "draft" ? "草稿" : "历史停用";
+    const managementActions = personal
+      ? `<span class="pill">成员个人内容 · 只读</span>`
+      : `<label class="quick-folder-move"><span>移动到</span><select data-move-memo="${escapeHtml(item.id)}" aria-label="移动 ${escapeHtml(item.title)} 到文件夹">${memoFolderSelectOptions(item.folderId || "")}</select></label>${editAction}<button class="icon-button danger" title="删除" aria-label="删除 ${escapeHtml(item.title)}" data-delete-memo="${item.id}">${icons.trash}</button>`;
+    return `<article class="content-card"><div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(truncate(item.body.replace(/[*#`]/g, ""), 150))}</p><div class="content-meta"><span class="pill">${escapeHtml(memoFolderName(item.folderId))}</span><span class="pill ${isExpired(item) ? "important" : ""}">${lifecycle}</span><span class="pill">${item.triggerMode === "broadcast" ? "强提醒广播" : "页面匹配"}</span><span class="pill ${item.annotation?.template === "strong" ? "important" : ""}">${annotationTemplateLabel(item.annotation?.template)}</span>${supplier ? `<span class="pill supplier-pill">供应商 · ${escapeHtml(supplier.displayName || supplier.id)}</span>` : ""}<span class="pill">${item.annotation?.anchors?.length || 0} 个元素锚点</span><span class="pill">${item.triggerMode === "broadcast" ? "不依赖页面" : escapeHtml(pageScopeLabel(item.rule))}</span><span class="pill">${escapeHtml(audienceNames)}</span><span class="pill">${escapeHtml(item.rule.includeTerms.join(" / ") || "无关键词")}</span></div></div><div class="card-actions memo-card-actions">${managementActions}</div></article>`;
+  }).join("") : `<div class="empty">没有符合条件的提醒</div>`;
 }
 
 function supplierEvaluationPreview(supplier) {
@@ -163,7 +285,7 @@ function renderSuppliers() {
 }
 
 function feedbackLabel(action) {
-  return ({ helpful: "有帮助", unhelpful: "不相关", confirmed: "已确认", ignored: "已忽略", snoozed: "稍后提醒" })[action] || action;
+  return ({ helpful: "有帮助", unhelpful: "不相关", feedback_up: "赞", feedback_down: "踩", confirmed: "已确认", operation_completed: "操作已完成", link_opened: "打开链接", link_copied: "复制链接", comment_opened: "查看评论", comment_submitted: "发表评论", ignored: "已忽略", snoozed: "稍后提醒" })[action] || action;
 }
 
 function formatDateTime(value) {
@@ -180,7 +302,7 @@ function renderMemoActivity() {
       ? feedback.map(event => `<li><span>${escapeHtml(event.userName)}${event.deviceId ? ` · 设备 ${escapeHtml(event.deviceId.slice(-6))}` : ""}</span><b>${escapeHtml(feedbackLabel(event.action))}</b><small>${escapeHtml(event.domain || "未知页面")} · ${formatDateTime(event.createdAt)}</small></li>`).join("")
       : `<li class="activity-empty">暂无成员反馈</li>`;
     const commentRows = comments.length ? comments.map(comment => `<li class="activity-comment"><span>${escapeHtml(comment.userName)}<small>${formatDateTime(comment.createdAt)}</small></span><p>${escapeHtml(comment.content)}</p><button class="button ghost" type="button" data-admin-delete-comment="${escapeHtml(comment.id)}">删除</button></li>`).join("") : `<li class="activity-empty">暂无成员评论</li>`;
-    return `<article class="activity-card"><div class="activity-head"><div><span class="pill">${item.scope === "personal" ? "个人提醒" : "组织提醒"}</span><h3>${escapeHtml(item.title)}</h3><p>由 ${escapeHtml(item.createdByName)}${item.createdFromDeviceId ? ` · 设备 ${escapeHtml(item.createdFromDeviceId.slice(-6))}` : ""} 创建 · ${formatDateTime(item.createdAt)}</p></div><div class="activity-stats"><span><b>${item.stats.triggered}</b>触发</span><span><b>${item.stats.confirmed}</b>确认</span><span><b>${comments.length}</b>评论</span><span><b>${item.stats.helpful}</b>有帮助</span></div></div><details><summary>查看 ${comments.length} 条评论</summary><ul>${commentRows}</ul></details><details><summary>查看 ${feedback.length} 条反馈明细</summary><ul>${feedbackRows}</ul></details></article>`;
+    return `<article class="activity-card"><div class="activity-head"><div><span class="pill">${item.scope === "personal" ? "个人提醒" : "组织提醒"}</span><h3>${escapeHtml(item.title)}</h3><p>由 ${escapeHtml(item.submittedByNameSnapshot || item.createdByName)}${item.createdFromDeviceId ? ` · 设备 ${escapeHtml(item.createdFromDeviceId.slice(-6))}` : ""} 提交 · ${formatDateTime(item.createdAt)}</p></div><div class="activity-stats"><span><b>${item.stats.matched}</b>命中</span><span><b>${item.stats.expanded}</b>展开</span><span><b>${item.stats.operation_completed}</b>完成</span><span><b>${comments.length}</b>评论</span><span><b>${item.stats.feedback_up}</b>赞</span><span><b>${item.stats.feedback_down}</b>踩</span></div></div><details><summary>查看 ${comments.length} 条评论</summary><ul>${commentRows}</ul></details><details><summary>查看 ${feedback.length} 条反馈明细</summary><ul>${feedbackRows}</ul></details></article>`;
   }).join("") : `<div class="empty">还没有提醒创建或成员反馈记录</div>`;
 }
 
@@ -190,7 +312,7 @@ function renderTools() {
 }
 
 function renderGroups() {
-  $("#group-list").innerHTML = state.data.groups.map(group => `<article class="group-card"><span class="member-count">${group.memberCount}</span><h3>${escapeHtml(group.name)}</h3><p>已投放 ${state.data.memos.filter(item => item.targetGroupIds.includes(group.id) && item.status === "published").length} 条组织提醒，${state.data.tools.filter(item => item.targetGroupIds.includes(group.id) && item.status === "published").length} 个工具链接。</p></article>`).join("");
+  $("#group-list").innerHTML = state.data.groups.length ? state.data.groups.map(group => `<article class="group-card"><div class="group-card-head"><span class="member-count">${group.memberCount}</span><button class="icon-button" type="button" aria-label="编辑 ${escapeHtml(group.name)}" data-edit-group="${escapeHtml(group.id)}">${icons.edit}</button></div><h3>${escapeHtml(group.name)}</h3><p>${escapeHtml(group.description || "暂无分组说明")}</p><div class="content-meta">${group.canPublishOrganizationMemos ? `<span class="pill">可发布全员提醒</span>` : `<span class="pill">仅个人提醒</span>`}</div><small>已投放 ${state.data.memos.filter(item => item.targetGroupIds.includes(group.id) && item.status === "published").length} 条组织提醒，${state.data.tools.filter(item => item.targetGroupIds.includes(group.id) && item.status === "published").length} 个工具链接。</small></article>`).join("") : `<div class="empty">还没有成员分组</div>`;
 }
 
 function renderMembers() {
@@ -292,7 +414,7 @@ function renderAccountDetail(userId) {
   if (!user) return $("#account-detail-dialog").close();
   state.selectedAccountId = user.id;
   const bindings = accountBindings(user.id);
-  const invitations = (state.data.invitations || []).filter(item => item.userId === user.id).sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
+  const invitations = (state.data.invitations || []).filter(item => (item.memberId || item.userId) === user.id).sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
   const groups = (user.groupIds || []).map(id => state.data.groups.find(group => group.id === id)?.name || id);
   const timeline = accountTimeline(user.id).slice(0, 30);
   $("#account-detail-title").textContent = user.name;
@@ -320,6 +442,12 @@ function renderPageGroups() {
     const patterns = group.sitePatterns.map(pattern => `<code title="${escapeHtml(pattern)}">${escapeHtml(pattern)}</code>`).join("");
     return `<article class="page-group-card"><div><h3>${escapeHtml(group.name)}</h3><p>${escapeHtml(group.description || "暂无说明")}</p><div class="usage-count">${usage} 条备忘正在使用</div></div><div class="pattern-list">${patterns}</div><div class="card-actions"><button class="icon-button" title="编辑" aria-label="编辑 ${escapeHtml(group.name)}" data-edit-page-group="${group.id}">${icons.edit}</button><button class="icon-button danger" title="删除" aria-label="删除 ${escapeHtml(group.name)}" data-delete-page-group="${group.id}">${icons.archive}</button></div></article>`;
   }).join("") : `<div class="empty">还没有页面组。新建后即可在关键词规则中选择。</div>`;
+}
+
+function renderExcludedSites() {
+  const form = $("#excluded-sites-form");
+  if (!form || !state.data) return;
+  form.elements.excludedSitePatterns.value = (state.data.settings?.excludedSitePatterns || []).join("\n");
 }
 
 function strategyLabel(strategy = {}) {
@@ -352,7 +480,7 @@ function togglePageGroupStrategyFields() {
 
 function fillGroupOptions() {
   const options = `<option value="">全体成员</option>${state.data.groups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("")}`;
-  $("#memo-form [name=targetGroupId]").innerHTML = options;
+  $("#memo-form [name=targetGroupIds]").innerHTML = state.data.groups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("");
   $("#tool-form [name=targetGroupId]").innerHTML = options;
   $("#memo-form [name=targetUserIds]").innerHTML = (state.data.users || []).filter(user => user.role !== "admin" && user.status !== "disabled").map(user => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join("");
   $("#member-form [name=groupIds]").innerHTML = state.data.groups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("");
@@ -383,7 +511,7 @@ function renderMemoAnchors() {
 
 function togglePageScope() {
   const form = $("#memo-form");
-  const scoped = form.elements.pageScope.value === "page_groups";
+  const scoped = form.elements.triggerMode.value === "page_match" && form.elements.pageScope.value === "page_groups";
   $("#page-group-picker").hidden = !scoped;
   $$("#memo-page-group-options input").forEach(input => { input.disabled = !scoped; });
 }
@@ -391,45 +519,93 @@ function togglePageScope() {
 function toggleMemoType() {
   const form = $("#memo-form");
   const operation = form.elements.type.value === "operation";
-  $("[data-operation-start]").hidden = !operation;
-  form.elements.startsAt.required = operation;
-  form.elements.expiresAt.required = operation;
+  $$("[data-operation-window]").forEach(field => { field.hidden = !operation; });
+  form.elements.startsAtDate.required = operation;
+  form.elements.durationPreset.required = operation;
+}
+
+function toggleAudience() {
+  const form = $("#memo-form");
+  const type = form.elements.audienceType.value;
+  $("[data-audience-groups]").hidden = type !== "groups";
+  $("[data-audience-members]").hidden = type !== "members";
+  form.elements.targetGroupIds.disabled = type !== "groups";
+  form.elements.targetUserIds.disabled = type !== "members";
+}
+
+function toggleTriggerMode() {
+  const form = $("#memo-form");
+  const broadcast = form.elements.triggerMode.value === "broadcast";
+  $("[data-page-trigger-fields]").hidden = broadcast;
+  form.elements.includeTerms.required = !broadcast;
+  if (broadcast) {
+    form.elements.annotationTemplate.value = "strong";
+    form.elements.priority.value = "important";
+  }
+  $$('[name="annotationTemplate"]').forEach(input => { input.disabled = broadcast && input.value !== "strong"; });
+  togglePageScope();
 }
 
 function switchView(view, updateHash = true) {
   state.view = view;
   $$(".view").forEach(el => el.classList.toggle("active", el.id === `view-${view}`));
   $$(".nav-item").forEach(el => { const active = el.dataset.view === view; el.classList.toggle("active", active); active ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current"); });
-  const titles = { overview: "运营概览", memos: "知识与规则", suppliers: "供应商卡片", pagegroups: "页面组", tools: "团队工具箱", accounts: "账号绑定", groups: "成员分组" };
-  const descriptions = { overview: "查看规则运行状态与团队使用情况", memos: "创建、发布和维护情境提醒", suppliers: "手工维护可与提醒关联的供应商资料", pagegroups: "统一管理规则可使用的网址范围", tools: "维护成员侧栏中的常用工作入口", accounts: "管理成员身份、设备绑定与最近登录记录", groups: "查看组织成员分组与内容覆盖" };
+  const titles = { overview: "运营概览", memos: "知识与规则", "memo-folders": "提醒文件夹", suppliers: "供应商卡片", pagegroups: "页面组", tools: "团队工具箱", accounts: "账号绑定", groups: "成员分组" };
+  const descriptions = { overview: "查看规则运行状态与团队使用情况", memos: "创建、发布和维护情境提醒", "memo-folders": "创建文件夹、整理提醒并按文件夹查询", suppliers: "手工维护可与提醒关联的供应商资料", pagegroups: "统一管理规则可使用的网址范围", tools: "维护成员侧栏中的常用工作入口", accounts: "管理成员身份、设备绑定与最近登录记录", groups: "查看组织成员分组与内容覆盖" };
   $("#page-title").textContent = titles[view];
   $("#page-description").textContent = descriptions[view];
   const primary = $("#primary-action");
-  primary.style.display = ["overview", "memos", "suppliers", "pagegroups"].includes(view) ? "block" : "none";
-  primary.textContent = view === "pagegroups" ? "新建页面组" : view === "suppliers" ? "新建供应商" : "新建组织提醒";
+  primary.style.display = ["overview", "memos", "memo-folders", "suppliers", "pagegroups"].includes(view) ? "block" : "none";
+  primary.textContent = view === "pagegroups" ? "新建页面组" : view === "suppliers" ? "新建供应商" : view === "memo-folders" ? "新建文件夹" : "新建组织提醒";
   if (updateHash && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
+}
+
+function openMemoFolder(id = null) {
+  const form = $("#memo-folder-form");
+  form.reset();
+  state.editingMemoFolder = id ? activeMemoFolders().find(item => item.id === id) : null;
+  $("#memo-folder-dialog-title").textContent = id ? "编辑提醒文件夹" : "新建提醒文件夹";
+  form.elements.sortOrder.value = 0;
+  if (state.editingMemoFolder) {
+    form.elements.id.value = state.editingMemoFolder.id;
+    form.elements.name.value = state.editingMemoFolder.name;
+    form.elements.description.value = state.editingMemoFolder.description || "";
+    form.elements.sortOrder.value = state.editingMemoFolder.sortOrder || 0;
+  }
+  $("#memo-folder-dialog").showModal();
 }
 
 function openMemo(id = null) {
   const form = $("#memo-form"); form.reset(); form.elements.cooldownMinutes.value = 30;
   form.elements.id.value = "";
+  form.elements.startsAtDate.value = dateInputValue();
+  form.elements.durationPreset.value = "30";
   state.editingMemo = id ? state.data.memos.find(item => item.id === id) : null;
   $("#memo-dialog-title").textContent = id ? "编辑组织提醒" : "新建组织提醒";
+  fillMemoFolderOptions(state.editingMemo?.folderId || "");
   if (state.editingMemo) {
     const item = state.editingMemo;
     form.elements.id.value = item.id; form.elements.type.value = item.type || "knowledge"; form.elements.title.value = item.title; form.elements.body.value = item.body;
-    form.elements.targetGroupId.value = item.targetGroupIds[0] || ""; form.elements.priority.value = item.priority; form.elements.status.value = item.status === "archived" ? "draft" : item.status;
+    form.elements.folderId.value = item.folderId || "";
+    form.elements.triggerMode.value = item.triggerMode || "page_match";
+    form.elements.audienceType.value = item.audienceType || ((item.targetUserIds || []).length ? "members" : (item.targetGroupIds || []).length ? "groups" : "all");
+    Array.from(form.elements.targetGroupIds.options).forEach(option => { option.selected = (item.targetGroupIds || []).includes(option.value); });
+    form.elements.priority.value = item.priority; form.elements.status.value = item.status === "archived" ? "draft" : item.status;
     Array.from(form.elements.targetUserIds.options).forEach(option => { option.selected = (item.targetUserIds || []).includes(option.value); });
     form.elements.pageScope.value = item.rule.pageScope || (item.rule.sitePatterns?.length ? "page_groups" : "global"); fillPageGroupOptions(item.rule.pageGroupIds || []); form.elements.includeTerms.value = item.rule.includeTerms.join("\n"); form.elements.excludeTerms.value = item.rule.excludeTerms.join("\n");
     form.elements.operator.value = item.rule.operator; form.elements.cooldownMinutes.value = item.rule.cooldownMinutes; form.elements.caseSensitive.checked = item.rule.caseSensitive; form.elements.useRegex.checked = item.rule.useRegex;
-    form.elements.tags.value = item.tags.join(", "); form.elements.startsAt.value = item.startsAt ? item.startsAt.slice(0, 16) : ""; form.elements.expiresAt.value = item.expiresAt ? item.expiresAt.slice(0, 16) : ""; form.elements.links.value = linksText(item.links || []);
+    form.elements.tags.value = item.tags.join(", ");
+    form.elements.startsAtDate.value = item.startsAt ? dateInputValue(new Date(item.startsAt)) : dateInputValue();
+    form.elements.durationPreset.value = String(item.startsAt && item.expiresAt ? durationPresetFromDates(item.startsAt, item.expiresAt) : 30);
+    form.elements.links.value = linksText(item.links || []);
     form.elements.annotationTemplate.value = item.annotation?.template || (item.priority === "important" ? "strong" : "standard");
     form.elements.keywordTerms.value = item.annotation?.keywordTerms?.join("\n") || "";
     fillSupplierOptions((item.entityRefs || []).find(ref => ref.type === "supplier")?.id || "");
   } else { fillPageGroupOptions(); fillSupplierOptions(); }
   renderMemoAnchors();
-  togglePageScope();
   toggleMemoType();
+  toggleAudience();
+  toggleTriggerMode();
   $("#memo-dialog").showModal();
 }
 
@@ -600,28 +776,87 @@ function openMember(id = null) {
   $("#member-dialog").showModal();
 }
 
+function openGroup(id = null) {
+  const form = $("#group-form");
+  form.reset();
+  state.editingGroup = id ? state.data.groups.find(item => item.id === id) : null;
+  $("#group-dialog-title").textContent = id ? "编辑分组" : "新建分组";
+  if (state.editingGroup) {
+    form.elements.id.value = state.editingGroup.id;
+    form.elements.name.value = state.editingGroup.name || "";
+    form.elements.description.value = state.editingGroup.description || "";
+    form.elements.canPublishOrganizationMemos.checked = state.editingGroup.canPublishOrganizationMemos === true;
+  }
+  $("#group-dialog").showModal();
+}
+
 $("#member-form").addEventListener("submit", async event => {
   event.preventDefault(); const data = new FormData(event.currentTarget); const id = state.editingMember?.id || "";
   try { await api(`/api/admin/users${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify({ name: data.get("name"), groupIds: data.getAll("groupIds"), status: data.get("status") }) }); $("#member-dialog").close(); await load(); toast("成员已保存"); } catch (error) { toast(error.message); }
+});
+
+$("#group-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const id = state.editingGroup?.id || "";
+  setSubmitting(form, true);
+  try {
+    await api(`/api/admin/groups${id ? `/${id}` : ""}`, {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify({
+        name: data.get("name"),
+        description: data.get("description"),
+        canPublishOrganizationMemos: data.get("canPublishOrganizationMemos") === "on"
+      })
+    });
+    $("#group-dialog").close();
+    await load();
+    toast("分组已保存");
+  } catch (error) { toast(error.message); } finally { setSubmitting(form, false); }
+});
+
+$("#memo-folder-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const id = state.editingMemoFolder?.id || "";
+  const payload = { name: data.get("name"), description: data.get("description"), sortOrder: Number(data.get("sortOrder")) };
+  setSubmitting(form, true);
+  try {
+    await api(`/api/admin/memo-folders${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
+    $("#memo-folder-dialog").close();
+    await load();
+    toast("提醒文件夹已保存");
+  } catch (error) { toast(error.message); } finally { setSubmitting(form, false); }
 });
 
 $("#memo-form").addEventListener("submit", async event => {
   event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
   const shouldPush = event.submitter?.dataset.publish === "true";
   const shouldAnnotate = event.submitter?.dataset.annotate === "true";
+  const triggerMode = data.get("triggerMode") === "broadcast" ? "broadcast" : "page_match";
   const pageScope = data.get("pageScope");
   const pageGroupIds = data.getAll("pageGroupIds");
-  if (pageScope === "page_groups" && !pageGroupIds.length) return toast("请至少选择一个页面组");
+  if (triggerMode === "page_match" && pageScope === "page_groups" && !pageGroupIds.length) return toast("请至少选择一个页面组");
+  if (triggerMode === "page_match" && !splitLines(data.get("includeTerms")).length) return toast("请至少填写一个包含关键词");
+  const audienceType = data.get("audienceType") || "all";
+  const targetGroupIds = audienceType === "groups" ? data.getAll("targetGroupIds") : [];
+  const targetUserIds = audienceType === "members" ? data.getAll("targetUserIds") : [];
+  if (audienceType === "groups" && !targetGroupIds.length) return toast("请至少选择一个成员组");
+  if (audienceType === "members" && !targetUserIds.length) return toast("请至少选择一名成员");
   const annotationTemplate = data.get("annotationTemplate") || "standard";
   const type = data.get("type") === "operation" ? "operation" : "knowledge";
-  const payload = { scope: "organization", type, title: data.get("title"), body: data.get("body"), targetGroupIds: data.get("targetGroupId") ? [data.get("targetGroupId")] : [], targetUserIds: data.getAll("targetUserIds"), entityRefs: data.get("supplierId") ? [{ type: "supplier", id: data.get("supplierId") }] : [], priority: annotationTemplate === "strong" ? "important" : data.get("priority"), status: data.get("status"), startsAt: type === "operation" ? new Date(data.get("startsAt")).toISOString() : null, expiresAt: data.get("expiresAt") ? new Date(data.get("expiresAt")).toISOString() : null, tags: data.get("tags").split(/[,，]/).map(x => x.trim()).filter(Boolean), links: parseLinks(data.get("links")), annotation: { template: annotationTemplate, keywordTerms: splitLines(data.get("keywordTerms")), anchors: state.editingMemo?.annotation?.anchors || [] }, rule: { pageScope, pageGroupIds, sitePatterns: [], includeTerms: splitLines(data.get("includeTerms")), excludeTerms: splitLines(data.get("excludeTerms")), operator: data.get("operator"), cooldownMinutes: Number(data.get("cooldownMinutes")), caseSensitive: data.get("caseSensitive") === "on", useRegex: data.get("useRegex") === "on" } };
+  const startsAt = type === "operation" ? localDateStartIso(data.get("startsAtDate")) : null;
+  const expiresAt = type === "operation" ? addDaysIso(startsAt, data.get("durationPreset")) : null;
+  const payload = { scope: "organization", type, triggerMode, audienceType, folderId: data.get("folderId") || null, title: data.get("title"), body: data.get("body"), targetGroupIds, targetUserIds, entityRefs: data.get("supplierId") ? [{ type: "supplier", id: data.get("supplierId") }] : [], priority: annotationTemplate === "strong" ? "important" : data.get("priority"), status: data.get("status"), startsAt, expiresAt, tags: data.get("tags").split(/[,，]/).map(x => x.trim()).filter(Boolean), links: parseLinks(data.get("links")), annotation: { template: annotationTemplate, keywordTerms: splitLines(data.get("keywordTerms")), anchors: state.editingMemo?.annotation?.anchors || [] }, rule: { pageScope: triggerMode === "broadcast" ? "global" : pageScope, pageGroupIds: triggerMode === "broadcast" ? [] : pageGroupIds, sitePatterns: [], includeTerms: triggerMode === "broadcast" ? [] : splitLines(data.get("includeTerms")), excludeTerms: triggerMode === "broadcast" ? [] : splitLines(data.get("excludeTerms")), operator: data.get("operator"), cooldownMinutes: Number(data.get("cooldownMinutes")), caseSensitive: data.get("caseSensitive") === "on", useRegex: data.get("useRegex") === "on" } };
   setSubmitting(form, true, shouldPush ? "正在发布" : "保存中");
   try {
     const editingId = state.editingMemo?.id || "";
     const saved = await api(`/api/admin/memos${editingId ? `/${editingId}` : ""}`, { method: editingId ? "PUT" : "POST", body: JSON.stringify(payload) });
     let message = "组织提醒已保存";
     if (shouldPush && saved.status === "published") {
-      const delivery = await api("/api/admin/push", { method: "POST", body: JSON.stringify({ memoId: saved.id, type: "sync" }) });
+      const delivery = await api("/api/admin/push", { method: "POST", body: JSON.stringify({ memoId: saved.id, type: triggerMode === "broadcast" ? "broadcast" : "sync" }) });
       message = delivery.message;
     } else if (shouldPush) message = "草稿已保存，未向成员推送";
     await load();
@@ -674,6 +909,20 @@ $("#page-group-form").addEventListener("submit", async event => {
   setSubmitting(form, true);
   const editingId = state.editingPageGroup?.id || "";
   try { await api(`/api/admin/page-groups${editingId ? `/${editingId}` : ""}`, { method: editingId ? "PUT" : "POST", body: JSON.stringify(payload) }); $("#page-group-dialog").close(); toast("页面组已保存"); await load(); } catch (error) { toast(error.message); } finally { setSubmitting(form, false); }
+});
+
+$("#excluded-sites-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const payload = { excludedSitePatterns: splitLines(String(data.get("excludedSitePatterns") || "")) };
+  setSubmitting(form, true);
+  try {
+    await api("/api/admin/settings", { method: "PUT", body: JSON.stringify(payload) });
+    toast("组织不提醒页面已保存并推送同步");
+    await load();
+  } catch (error) { toast(error.message); }
+  finally { setSubmitting(form, false); }
 });
 
 $("#strategy-test-form").addEventListener("submit", async event => {
@@ -730,11 +979,13 @@ document.addEventListener("click", async event => {
   }
   const nav = event.target.closest("[data-view]"); if (nav) switchView(nav.dataset.view);
   const jump = event.target.closest("[data-jump]"); if (jump) switchView(jump.dataset.jump);
-  if (event.target.closest("#primary-action")) state.view === "pagegroups" ? openPageGroup() : state.view === "suppliers" ? openSupplier() : openMemo();
+  if (event.target.closest("#primary-action")) state.view === "pagegroups" ? openPageGroup() : state.view === "suppliers" ? openSupplier() : state.view === "memo-folders" ? openMemoFolder() : openMemo();
+  if (event.target.closest("#new-memo-folder")) openMemoFolder();
   if (event.target.closest("#new-supplier")) openSupplier();
   if (event.target.closest("#new-tool")) openTool();
   if (event.target.closest("#new-page-group")) openPageGroup();
   if (event.target.closest("#new-member")) openMember();
+  if (event.target.closest("#new-group")) openGroup();
   if (event.target.closest("#new-account")) openMember();
   if (event.target.closest("#push-extension-update")) {
     const button = event.target.closest("#push-extension-update");
@@ -747,33 +998,67 @@ document.addEventListener("click", async event => {
     finally { button.disabled = false; }
   }
   const editMemo = event.target.closest("[data-edit-memo]"); if (editMemo) openMemo(editMemo.dataset.editMemo);
+  const openMemoFolderButton = event.target.closest("[data-open-memo-folder]"); if (openMemoFolderButton) {
+    const folderId = openMemoFolderButton.dataset.openMemoFolder;
+    fillMemoFolderOptions();
+    $("#memo-folder-filter").value = folderId === "all" ? "all" : folderId;
+    switchView("memos");
+    renderMemos();
+  }
+  const editMemoFolder = event.target.closest("[data-edit-memo-folder]"); if (editMemoFolder) openMemoFolder(editMemoFolder.dataset.editMemoFolder);
   const editSupplier = event.target.closest("[data-edit-supplier]"); if (editSupplier) openSupplier(editSupplier.dataset.editSupplier);
   const editTool = event.target.closest("[data-edit-tool]"); if (editTool) openTool(editTool.dataset.editTool);
   const editPageGroup = event.target.closest("[data-edit-page-group]"); if (editPageGroup) openPageGroup(editPageGroup.dataset.editPageGroup);
   const accountDetail = event.target.closest("[data-account-detail]"); if (accountDetail) openAccountDetail(accountDetail.dataset.accountDetail);
   const editMember = event.target.closest("[data-edit-member]"); if (editMember) { if ($("#account-detail-dialog").open) $("#account-detail-dialog").close(); openMember(editMember.dataset.editMember); }
+  const editGroup = event.target.closest("[data-edit-group]"); if (editGroup) openGroup(editGroup.dataset.editGroup);
   const copyBinding = event.target.closest("[data-copy-binding]"); if (copyBinding) { await navigator.clipboard.writeText(copyBinding.dataset.copyBinding).catch(() => {}); toast("绑定号码已复制"); }
-  const inviteMember = event.target.closest("[data-invite-member]"); if (inviteMember) { try { const invitation = await api("/api/admin/invitations", { method: "POST", body: JSON.stringify({ userId: inviteMember.dataset.inviteMember, validMinutes: 1440 }) }); await navigator.clipboard.writeText(invitation.code).catch(() => {}); await load(); toast(`邀请码 ${invitation.code} 已生成并复制`); } catch (error) { toast(error.message); } }
+  const inviteMember = event.target.closest("[data-invite-member]"); if (inviteMember) { try { const invitation = await api("/api/admin/invitations", { method: "POST", body: JSON.stringify({ memberId: inviteMember.dataset.inviteMember, validMinutes: 1440 }) }); await navigator.clipboard.writeText(invitation.code).catch(() => {}); await load(); toast(`邀请码 ${invitation.code} 已生成并复制`); } catch (error) { toast(error.message); } }
   const copyInvitation = event.target.closest("[data-copy-invitation]"); if (copyInvitation) { await navigator.clipboard.writeText(copyInvitation.dataset.copyInvitation).catch(() => {}); toast("邀请码已复制"); }
+  const clearInactiveInvitations = event.target.closest("#clear-inactive-invitations"); if (clearInactiveInvitations && confirm("确认清理所有已使用、已过期或已撤销的邀请码？绑定与删除事件仍会保留。")) { const result = await api("/api/admin/invitations/inactive", { method: "DELETE" }); await load(); toast(result.deletedCount ? `已清理 ${result.deletedCount} 条失效邀请码` : "没有需要清理的失效邀请码"); }
   const deleteInvitation = event.target.closest("[data-delete-invitation]"); if (deleteInvitation && confirm("确认删除这条邀请码记录？已发出的邀请码将立即失效。")) { await api(`/api/admin/invitations/${deleteInvitation.dataset.deleteInvitation}`, { method: "DELETE" }); await load(); toast("邀请码已删除"); }
   const revokeDevice = event.target.closest("[data-revoke-device]"); if (revokeDevice && confirm("立即撤销这台设备的成员权限？")) { await api(`/api/admin/device-bindings/${revokeDevice.dataset.revokeDevice}`, { method: "DELETE" }); await load(); toast("设备权限已撤销"); }
   const testPageGroup = event.target.closest("[data-test-page-group]"); if (testPageGroup) openStrategyTest(testPageGroup.dataset.testPageGroup);
   const deleteAnchor = event.target.closest("[data-delete-anchor]"); if (deleteAnchor && state.editingMemo) { state.editingMemo.annotation.anchors = (state.editingMemo.annotation.anchors || []).filter(anchor => anchor.id !== deleteAnchor.dataset.deleteAnchor); renderMemoAnchors(); }
   const deleteMemo = event.target.closest("[data-delete-memo]"); if (deleteMemo && confirm("确认永久删除这条组织提醒？删除后无法恢复，历史反馈与审计记录仍会保留。")) { await api(`/api/admin/memos/${deleteMemo.dataset.deleteMemo}`, { method: "DELETE" }); toast("组织提醒已删除"); await load(); }
+  const deleteMemoFolder = event.target.closest("[data-delete-memo-folder]"); if (deleteMemoFolder && confirm("确认删除这个文件夹？文件夹内提醒会保留，并自动变为未分组。")) { await api(`/api/admin/memo-folders/${deleteMemoFolder.dataset.deleteMemoFolder}`, { method: "DELETE" }); toast("提醒文件夹已删除"); await load(); }
   const deleteSupplier = event.target.closest("[data-delete-supplier]"); if (deleteSupplier && confirm("确认删除这条供应商资料？已关联提醒时需要先取消关联。")) { try { await api(`/api/admin/suppliers/${deleteSupplier.dataset.deleteSupplier}`, { method: "DELETE" }); toast("供应商资料已删除"); await load(); } catch (error) { toast(error.message); } }
   const adminDeleteComment = event.target.closest("[data-admin-delete-comment]"); if (adminDeleteComment && confirm("管理员删除这条成员评论？")) { try { await api(`/api/admin/memo-comments/${adminDeleteComment.dataset.adminDeleteComment}`, { method: "DELETE" }); toast("评论已删除"); await load(); } catch (error) { toast(error.message); } }
   const deleteTool = event.target.closest("[data-delete-tool]"); if (deleteTool && confirm("确认撤回这个工具链接？")) { await api(`/api/admin/tools/${deleteTool.dataset.deleteTool}`, { method: "DELETE" }); toast("链接已撤回"); await load(); }
   const deletePageGroup = event.target.closest("[data-delete-page-group]"); if (deletePageGroup && confirm("确认删除这个页面组？")) { try { await api(`/api/admin/page-groups/${deletePageGroup.dataset.deletePageGroup}`, { method: "DELETE" }); toast("页面组已删除"); await load(); } catch (error) { toast(error.message); } }
   const close = event.target.closest("[data-close]"); if (close) { $(`#${close.dataset.close}`).close(); if (close.dataset.close === "account-detail-dialog") state.selectedAccountId = null; }
 });
-$("#memo-search").addEventListener("input", renderMemos); $("#memo-status").addEventListener("change", renderMemos); $("#memo-type").addEventListener("change", renderMemos);
+$("#memo-search").addEventListener("input", renderMemos); $("#memo-status").addEventListener("change", renderMemos); $("#memo-type").addEventListener("change", renderMemos); $("#memo-folder-filter").addEventListener("change", renderMemos);
+document.addEventListener("change", async event => {
+  const select = event.target.closest("[data-move-memo]");
+  if (!select) return;
+  const memoId = select.dataset.moveMemo;
+  const memo = state.data?.memos?.find(item => item.id === memoId);
+  const previousFolderId = memo?.folderId || "";
+  if (!memo || previousFolderId === select.value) return;
+  select.disabled = true;
+  try {
+    await api(`/api/admin/memos/${memoId}/folder`, { method: "PUT", body: JSON.stringify({ folderId: select.value || null }) });
+    toast(select.value ? `已移动到“${memoFolderName(select.value)}”` : "已移动到未分组");
+    await load();
+  } catch (error) {
+    select.value = previousFolderId;
+    toast(error.message);
+  } finally { select.disabled = false; }
+});
 $("#supplier-search").addEventListener("input", renderSuppliers);
 $("#account-search").addEventListener("input", renderAccounts); $("#account-status-filter").addEventListener("change", renderAccounts); $("#account-group-filter").addEventListener("change", renderAccounts);
 $("#invitation-status-filter").addEventListener("change", renderInvitations);
-$("#memo-form").addEventListener("change", event => { if (event.target.name === "pageScope") togglePageScope(); if (event.target.name === "type") toggleMemoType(); });
+$("#memo-form").addEventListener("change", event => {
+  if (event.target.name === "pageScope") togglePageScope();
+  if (event.target.name === "type") toggleMemoType();
+  if (event.target.name === "audienceType") toggleAudience();
+  if (event.target.name === "triggerMode") toggleTriggerMode();
+});
 $("#memo-form [name=supplierId]").addEventListener("change", event => { const supplier = (state.data.suppliers || []).find(item => item.id === event.target.value); const terms = $("#memo-form [name=includeTerms]"); if (supplier && !terms.value.trim()) terms.value = (supplier.matchTerms || []).join("\n"); });
 $("#page-group-form").addEventListener("change", event => { if (event.target.name === "matchScope") togglePageGroupStrategyFields(); });
-const initialView = ["overview", "memos", "suppliers", "pagegroups", "tools", "accounts", "groups"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview";
+const adminViews = ["overview", "memos", "memo-folders", "suppliers", "pagegroups", "tools", "accounts", "groups"];
+const initialView = adminViews.includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview";
 switchView(initialView, false);
-window.addEventListener("hashchange", () => { const view = location.hash.slice(1); if (["overview", "memos", "suppliers", "pagegroups", "tools", "accounts", "groups"].includes(view)) switchView(view, false); });
+window.addEventListener("hashchange", () => { const view = location.hash.slice(1); if (adminViews.includes(view)) switchView(view, false); });
 initializeAdmin();

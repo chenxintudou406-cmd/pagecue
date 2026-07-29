@@ -80,8 +80,9 @@ function build(target) {
   manifest.version = version;
   if (target === "sogou") {
     manifest.minimum_chrome_version = "109";
-    manifest.permissions = manifest.permissions.filter(permission => permission !== "sidePanel");
-    delete manifest.side_panel;
+    // Keep both entry surfaces in the compatibility package. Sogou/360 builds
+    // that expose chrome.sidePanel can switch to the persistent side panel;
+    // older builds retain the action popup as the safe default.
     manifest.action.default_popup = "sidepanel/index.html";
   } else {
     manifest.minimum_chrome_version = "116";

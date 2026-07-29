@@ -16,6 +16,8 @@ test("OR、排除词和大小写规则", () => {
 test("站点白名单支持通配符", () => {
   assert.equal(engine.matchesSite("https://sales.example.com/deal/1", ["https://*.example.com/*"]), true);
   assert.equal(engine.matchesSite("https://other.test/deal/1", ["https://*.example.com/*"]), false);
+  assert.equal(engine.matchesSite("file:///C:/Users/44982/Documents/demo.html", ["file:///C:/Users/44982/Documents/*"]), true);
+  assert.equal(engine.matchesSite("file:///D:/other/demo.html", ["file:///C:/Users/44982/Documents/*"]), false);
 });
 
 test("正则表达式匹配且非法表达式安全失败", () => {
@@ -31,6 +33,14 @@ test("过滤草稿、未开始和已过期备忘", () => {
     { id: "expired", status: "published", expiresAt: "2020-01-01T00:00:00Z", rule: { includeTerms: ["客户"] } }
   ];
   assert.deepEqual(engine.evaluateMemos(memos, { text: "客户" }).map(item => item.id), ["active"]);
+});
+
+test("全局提醒默认不依赖页面组即可在普通网页命中", () => {
+  const memos = [
+    { id: "global", status: "published", rule: { pageScope: "global", sitePatterns: [], includeTerms: ["供应商"] } },
+    { id: "scoped", status: "published", rule: { pageScope: "page_groups", sitePatterns: ["https://crm.example.com/*"], includeTerms: ["供应商"] } }
+  ];
+  assert.deepEqual(engine.evaluateMemos(memos, { url: "https://book.example.com/product/1", text: "供应商产品信息" }).map(item => item.id), ["global"]);
 });
 
 test("相同关键词新增出现次数会产生不同触发签名", () => {

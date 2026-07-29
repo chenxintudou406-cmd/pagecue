@@ -11,6 +11,7 @@ COPY demo ./demo
 COPY data ./data
 COPY downloads ./downloads
 COPY extension/shared ./extension/shared
+COPY shared ./shared
 COPY server.js README.md PRIVACY.md ./
 
 EXPOSE 8787

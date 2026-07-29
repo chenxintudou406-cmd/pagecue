@@ -11,7 +11,7 @@ The Chinese product name is **页知**. PageCue remains the English brand name.
 ## Features
 
 - Three member views: current page alerts, reminder library, and team toolbox.
-- Knowledge reminders for reference material and operation reminders with named assignees and completion acknowledgement.
+- Knowledge reminders for reference material and operation reminders with submitter, target-member, expiry, and completion records.
 - Invite-code device binding; members cannot impersonate another account by editing a client-side ID.
 - Personal memo creation, editing, and deletion; organization content remains read-only for members.
 - One-time install permission with organization page groups registered automatically; personal site allowlists remain configurable.
@@ -27,6 +27,11 @@ The Chinese product name is **页知**. PageCue remains the English brand name.
 - Store-managed extension updates with on-demand update checks when the backend announces a newer package.
 - Three severity levels: blue light highlights, yellow medium cards, and persistent red heavy cards. Knowledge uses bright glass; operations use dark glass.
 - Two packages from one codebase: a Chrome/Edge side-panel build and a Chromium 109+ Sogou-compatible popup build.
+
+## Product documentation
+
+- [Product background and positioning](./docs/project-background/pagecue-product-background.md)
+- [Current P0 iteration plan](./docs/project-background/pagecue-p0-iteration-plan.md)
 
 ## Requirements
 
@@ -47,17 +52,21 @@ Open the administration console at <http://127.0.0.1:8787/admin> and the rule de
 
 Download the matching package from the production service:
 
-- Chrome/Edge: `https://pagecue.herotop.cn/downloads/pagecue-chrome-edge-3.1.2.zip`
-- Sogou/360 compatibility: `https://pagecue.herotop.cn/downloads/pagecue-sogou-3.1.2.zip`
+- Chrome/Edge: `https://pagecue.herotop.cn/downloads/pagecue-chrome-edge-3.2.7.zip`
+- Sogou/360 compatibility: `https://pagecue.herotop.cn/downloads/pagecue-sogou-3.2.7.zip`
+
+选中网页正文后右键点击“页知：创建提醒”，可直接补充备注并创建知识或操作提醒。普通成员只能创建自己的提醒；管理员或拥有“允许发布全员提醒”权限的成员组可以发布全员提醒。
+
+安全的单行文本框和搜索框也支持右键创建：只读取实际选中的2–20个字符，不读取完整输入值；换行、敏感字段、文本域、富文本及包含密码框的表单会被拒绝。
 
 1. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
 2. Enable **Developer mode**.
 3. Choose **Load unpacked** and select the extracted package directory. Use the Sogou package for Sogou Browser; it opens PageCue in a compact popup instead of the side panel.
 4. Open PageCue from the extension toolbar, then open its settings.
 5. The production service address `https://pagecue.herotop.cn` is configured automatically. Ask an administrator to create your member record and generate a one-time invitation code, then bind the device in PageCue settings.
-6. Organization page groups are monitored automatically after binding. Personal sites can still be added from the extension settings. Open or refresh the target page once after installation.
+6. Pages are scanned locally after binding. If a page should not show reminders, add it to the personal or organization exclusion list. Open or refresh the target page once after installation.
 
-PageCue requests browser page access once during installation. It only registers content monitoring for organization page groups and personal sites; matching remains local and existing tabs must be refreshed once after installation or a newly published page group.
+PageCue requests browser page access once during installation. Matching remains local, page text is not uploaded, and existing tabs must be refreshed once after installation or an extension update.
 
 ## Production pilot
 
@@ -67,7 +76,15 @@ PageCue requests browser page access once during installation. It only registers
 
 The server runs as the `pagecue` Docker Compose project and stores mutable data under `/opt/pagecue/data`. The extension uses the production API by default, while advanced connection settings remain available for development and troubleshooting.
 
-Database writes use an atomic replace operation. Time-based safety copies are retained under `/opt/pagecue/data/backups` before mutations so an interrupted write or accidental content change can be recovered without replacing the active database.
+Database writes use an atomic replace operation. Time-based safety copies are retained under `/opt/pagecue/data/backups` before mutations. P0 also provides hash-verified protected backups, an optional offsite copy, and restore verification:
+
+```powershell
+npm.cmd run backup:data
+node scripts/restore-backup.js <backup.json>
+node scripts/restore-backup.js <backup.json> <restore-target.json>
+```
+
+Set `PAGECUE_OFFSITE_BACKUP_DIR` to copy each protected backup and manifest to a second disk or mounted object-storage directory. `PAGECUE_BACKUP_KEEP` controls local protected-backup retention (default: 90).
 
 ## WorkBuddy / WeCom inbound reminders
 

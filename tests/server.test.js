@@ -7,7 +7,36 @@ const net = require("node:net");
 const { spawn } = require("node:child_process");
 const { randomBytes, scryptSync } = require("node:crypto");
 const webPush = require("web-push");
-const { server, visibleTo, isActive, normalizeRule, normalizePageStrategy, normalizeAnnotation, resolveMemoPageGroups, cleanMemo, cleanSupplier, cleanPageGroup, eventStats } = require("../server.js");
+const { server, visibleTo, isActive, normalizeRule, normalizePageStrategy, normalizeAnnotation, resolveMemoPageGroups, cleanMemo, cleanSupplier, cleanPageGroup, cleanGroup, ensurePersonalMemoFolders, personalMemoFolderId, eventStats } = require("../server.js");
+
+test("成员分组支持新增和编辑且保持稳定 ID", () => {
+  const created = cleanGroup({ name: " 采购组 ", description: "采购与供应商协同" }, {}, "admin_demo");
+  assert.match(created.id, /^group_/);
+  assert.equal(created.name, "采购组");
+  assert.equal(created.description, "采购与供应商协同");
+  const updated = cleanGroup({ name: "采购支持组", description: "" }, created, "admin_demo");
+  assert.equal(updated.id, created.id);
+  assert.equal(updated.name, "采购支持组");
+  assert.equal(updated.createdAt, created.createdAt);
+  assert.equal(updated.updatedBy, "admin_demo");
+  assert.throws(() => cleanGroup({ name: "   " }), /分组名称不能为空/);
+});
+
+test("个人知识与操作提醒使用固定自动归类文件夹", () => {
+  const db = { memoFolders: [] };
+  assert.equal(ensurePersonalMemoFolders(db), true);
+  assert.deepEqual(db.memoFolders.map(folder => [folder.id, folder.name, folder.sortOrder, folder.systemManaged]), [
+    ["memo_folder_personal_knowledge", "20-个人关注知识", 20, true],
+    ["memo_folder_personal_operation", "99-个人操作提醒", 99, true]
+  ]);
+  assert.equal(ensurePersonalMemoFolders(db), false);
+  assert.equal(personalMemoFolderId("knowledge"), "memo_folder_personal_knowledge");
+  assert.equal(personalMemoFolderId("operation"), "memo_folder_personal_operation");
+  const existingDb = { memoFolders: [{ id: "existing_personal", name: "20-个人关注知识" }] };
+  assert.equal(ensurePersonalMemoFolders(existingDb), true);
+  assert.equal(personalMemoFolderId("knowledge", existingDb), "existing_personal");
+  assert.equal(existingDb.memoFolders.length, 2);
+});
 
 function testPasswordHash(password) {
   const salt = randomBytes(16);
@@ -50,8 +79,20 @@ test("正式产品包含 328px 供应商卡片和后台手工维护入口", () =
   const content = fs.readFileSync(path.join(__dirname, "..", "extension", "content", "content.js"), "utf8");
   const css = fs.readFileSync(path.join(__dirname, "..", "extension", "content", "content.css"), "utf8");
   assert.match(html, /data-view="suppliers"/);
+  assert.match(html, /data-view="memo-folders"/);
+  assert.match(html, /id="view-memo-folders"/);
+  assert.match(html, /id="memo-folder-list"/);
+  assert.match(html, /data-open-memo-folder/);
+  assert.match(html, /name="durationPreset"/);
+  assert.match(html, /yezhi-bulk-import-template\.xlsx/);
+  assert.match(html, /id="bulk-import-template-download"/);
+  assert.match(html, /bulk-import-template-download"\)\.href = adminAsset\("yezhi-bulk-import-template\.xlsx"\)/);
   assert.match(html, /name="supplierId"/);
   assert.match(html, /name="matchTerms"/);
+  assert.match(app, /api\/admin\/memo-folders/);
+  assert.match(app, /api\/admin\/memos\/.*\/folder/);
+  assert.match(app, /data-move-memo/);
+  assert.match(app, /function localDateStartIso/);
   assert.match(app, /api\/admin\/suppliers/);
   assert.match(content, /GET_SUPPLIER/);
   assert.match(css, /width:328px/);
@@ -117,16 +158,31 @@ test("V2 批注迁移和锚点上限保持向后兼容", () => {
 test("Manifest V3 在安装时获得网页权限，并按组织页面组动态注册监控", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "extension", "manifest.json"), "utf8"));
   const worker = fs.readFileSync(path.join(__dirname, "..", "extension", "background", "service-worker.js"), "utf8");
+  const content = fs.readFileSync(path.join(__dirname, "..", "extension", "content", "content.js"), "utf8");
+  const sidepanel = fs.readFileSync(path.join(__dirname, "..", "extension", "sidepanel", "app.js"), "utf8");
   assert.equal(manifest.manifest_version, 3);
   assert.ok(manifest.permissions.includes("sidePanel"));
   assert.ok(manifest.permissions.includes("alarms"));
   assert.ok(manifest.host_permissions.includes("http://*/*"));
   assert.ok(manifest.host_permissions.includes("https://*/*"));
+  assert.ok(manifest.host_permissions.includes("file:///*"));
   assert.equal(manifest.optional_host_permissions, undefined);
   assert.equal(manifest.minimum_chrome_version, "116");
-  assert.match(worker, /managedSitePatterns/);
-  assert.match(worker, /bootstrap\.pageGroups/);
+  assert.ok(manifest.content_scripts?.[0]?.matches.includes("http://*/*"));
+  assert.ok(manifest.content_scripts?.[0]?.matches.includes("https://*/*"));
+  assert.ok(manifest.content_scripts?.[0]?.matches.includes("file:///*"));
+  assert.ok(manifest.content_scripts?.[0]?.all_frames);
+  assert.match(worker, /DEFAULT_SCAN_PATTERNS/);
+  assert.match(worker, /managedExcludedSitePatterns/);
+  assert.match(worker, /isAllowedFileSchemeAccess/);
   assert.match(worker, /registerContentScripts/);
+  assert.match(worker, /senderDomain/);
+  assert.doesNotMatch(worker, /!message\.domain/);
+  assert.match(content, /isCurrentPageExcluded/);
+  assert.match(content, /PAGE_EXCLUDED/);
+  assert.match(content, /location\.protocol === "file:"/);
+  assert.match(content, /patterns\.length > 0 && ContextRuleEngine\.matchesSite/);
+  assert.match(sidepanel, /excludedSitePatterns/);
 });
 
 test("实时推送具备 Push 唤醒和每小时兜底，而不是高频轮询", () => {
@@ -139,27 +195,30 @@ test("实时推送具备 Push 唤醒和每小时兜底，而不是高频轮询",
   assert.match(admin, /发布并推送/);
 });
 
-test("搜狗 Chromium 116 缺少侧栏能力时使用弹窗兼容模式", () => {
+test("兼容浏览器缺少侧栏能力时仍可使用弹窗兼容模式", () => {
   const worker = fs.readFileSync(path.join(__dirname, "..", "extension", "background", "service-worker.js"), "utf8");
   assert.match(worker, /SIDE_PANEL_AVAILABLE/);
   assert.match(worker, /chrome\.action\.setPopup/);
   assert.match(worker, /chrome\.tabs\.create/);
 });
 
-test("双安装包清单来自同一源码并使用不同能力基线", () => {
+test("双安装包都支持侧栏且兼容包保留悬挂窗口退路", () => {
   const root = path.join(__dirname, "..", ".deploy", "staging");
+  const version = require(path.join(__dirname, "..", "package.json")).version;
   const chromeManifest = JSON.parse(fs.readFileSync(path.join(root, "chrome-edge", "manifest.json"), "utf8"));
   const sogouManifest = JSON.parse(fs.readFileSync(path.join(root, "sogou", "manifest.json"), "utf8"));
-  assert.equal(chromeManifest.version, "3.1.2");
+  assert.equal(chromeManifest.version, version);
   assert.equal(chromeManifest.minimum_chrome_version, "116");
   assert.ok(chromeManifest.side_panel);
   assert.ok(chromeManifest.permissions.includes("sidePanel"));
   assert.equal(sogouManifest.minimum_chrome_version, "109");
-  assert.equal(sogouManifest.side_panel, undefined);
-  assert.equal(sogouManifest.permissions.includes("sidePanel"), false);
+  assert.ok(sogouManifest.side_panel);
+  assert.ok(sogouManifest.permissions.includes("sidePanel"));
   assert.equal(sogouManifest.action.default_popup, "sidepanel/index.html");
-  assert.ok(fs.statSync(path.join(__dirname, "..", ".deploy", "pagecue-chrome-edge-3.1.2.zip")).size > 0);
-  assert.ok(fs.statSync(path.join(__dirname, "..", ".deploy", "pagecue-sogou-3.1.2.zip")).size > 0);
+  assert.ok(chromeManifest.content_scripts?.[0]?.matches.includes("https://*/*"));
+  assert.ok(sogouManifest.content_scripts?.[0]?.matches.includes("https://*/*"));
+  assert.ok(fs.statSync(path.join(__dirname, "..", ".deploy", `pagecue-chrome-edge-${version}.zip`)).size > 0);
+  assert.ok(fs.statSync(path.join(__dirname, "..", ".deploy", `pagecue-sogou-${version}.zip`)).size > 0);
 });
 
 test("批注运行时遵守搜狗兼容与页面隐私边界", () => {
@@ -322,12 +381,44 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(loginResponse.status, 200);
   const adminCookie = loginResponse.headers.get("set-cookie").split(";")[0];
   const adminFetch = (pathname, options = {}) => fetch(`${base}${pathname}`, { ...options, headers: { ...(options.headers || {}), Cookie: adminCookie } });
+  const groupResponse = await adminFetch("/api/admin/groups", { method: "POST", body: JSON.stringify({ name: "质量组", description: "质量与合规成员" }) });
+  assert.equal(groupResponse.status, 201);
+  const group = await groupResponse.json();
+  assert.match(group.id, /^group_/);
+  assert.equal((await adminFetch("/api/admin/groups", { method: "POST", body: JSON.stringify({ name: "质量组" }) })).status, 409);
+  const groupUpdateResponse = await adminFetch(`/api/admin/groups/${group.id}`, { method: "PUT", body: JSON.stringify({ name: "质量支持组", description: "更新说明" }) });
+  assert.equal(groupUpdateResponse.status, 200);
+  assert.equal((await groupUpdateResponse.json()).id, group.id);
+  const groupState = await (await adminFetch("/api/admin/state")).json();
+  assert.equal(groupState.groups.find(item => item.id === group.id).name, "质量支持组");
+  assert.ok(groupState.auditLog.some(item => item.entityType === "group" && item.entityId === group.id));
+  const folderResponse = await adminFetch("/api/admin/memo-folders", { method: "POST", body: JSON.stringify({ name: "报价知识", description: "报价前需要核查的知识", sortOrder: 10 }) });
+  assert.equal(folderResponse.status, 201);
+  const folder = await folderResponse.json();
+  assert.equal((await adminFetch("/api/admin/memo-folders", { method: "POST", body: JSON.stringify({ name: "报价知识" }) })).status, 409);
+  const folderMemoResponse = await adminFetch("/api/admin/memos", { method: "POST", body: JSON.stringify({ title: "文件夹测试提醒", status: "draft", folderId: folder.id, rule: { includeTerms: ["文件夹测试"] } }) });
+  assert.equal(folderMemoResponse.status, 201);
+  const folderMemo = await folderMemoResponse.json();
+  const secondFolderResponse = await adminFetch("/api/admin/memo-folders", { method: "POST", body: JSON.stringify({ name: "供应商知识", sortOrder: 20 }) });
+  assert.equal(secondFolderResponse.status, 201);
+  const secondFolder = await secondFolderResponse.json();
+  const moveFolderResponse = await adminFetch(`/api/admin/memos/${folderMemo.id}/folder`, { method: "PUT", body: JSON.stringify({ folderId: secondFolder.id }) });
+  assert.equal(moveFolderResponse.status, 200);
+  assert.equal((await moveFolderResponse.json()).folderId, secondFolder.id);
+  assert.equal((await adminFetch(`/api/admin/memos/${folderMemo.id}/folder`, { method: "PUT", body: JSON.stringify({ folderId: "missing_folder" }) })).status, 400);
+  assert.equal((await adminFetch(`/api/admin/memo-folders/${secondFolder.id}`, { method: "DELETE" })).status, 200);
+  const folderState = await (await adminFetch("/api/admin/state")).json();
+  assert.ok(folderState.memoFolders.some(item => item.id === folder.id));
+  assert.equal(folderState.memoFolders.some(item => item.id === secondFolder.id), false);
+  assert.equal(folderState.memos.find(item => item.id === folderMemo.id).folderId, null);
+  assert.ok(folderState.auditLog.some(item => item.action === "folder_changed" && item.entityId === folderMemo.id));
   const invitationResponse = await adminFetch("/api/admin/invitations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "user_demo", validMinutes: 60 }) });
   assert.equal(invitationResponse.status, 201);
   const invitation = await invitationResponse.json();
   const bindingResponse = await fetch(`${base}/api/device-bindings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inviteCode: invitation.code, deviceId: "test-device", browser: "test", extensionVersion: "3.0.0" }) });
   assert.equal(bindingResponse.status, 201);
   const binding = await bindingResponse.json();
+  assert.equal((await (await adminFetch("/api/admin/state")).json()).invitations.some(item => item.id === invitation.id), false);
   const memberFetch = (pathname, options = {}) => fetch(`${base}${pathname}`, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${binding.token}` } });
   const firstMemberSession = await memberFetch("/api/device/session");
   const secondMemberSession = await memberFetch("/api/device/session");
@@ -352,6 +443,9 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(Object.hasOwn(visibleInvitation, "codeCipher"), false);
   assert.equal((await adminFetch(`/api/admin/invitations/${managedInvitation.id}`, { method: "DELETE" })).status, 200);
   assert.equal((await (await adminFetch("/api/admin/state")).json()).invitations.some(item => item.id === managedInvitation.id), false);
+  const inactiveInvitationCleanup = await adminFetch("/api/admin/invitations/inactive", { method: "DELETE" });
+  assert.equal(inactiveInvitationCleanup.status, 200);
+  assert.equal(typeof (await inactiveInvitationCleanup.json()).deletedCount, "number");
   const versionResponse = await fetch(`${base}/api/version`);
   assert.equal(versionResponse.status, 200);
   assert.equal((await versionResponse.json()).checkIntervalMinutes, 60);
@@ -468,6 +562,23 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(createdResponse.status, 201);
   const created = await createdResponse.json();
   assert.equal(created.ownerId, "user_demo");
+  assert.equal(created.folderId, "memo_folder_personal_knowledge");
+  const personalOperationResponse = await memberFetch(`/api/personal-memos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    type: "operation",
+    title: "个人操作测试",
+    startsAt: new Date(Date.now() - 60_000).toISOString(),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
+    folderId: "forged_folder",
+    rule: { includeTerms: ["个人操作"] }
+  }) });
+  assert.equal(personalOperationResponse.status, 201);
+  const personalOperation = await personalOperationResponse.json();
+  assert.equal(personalOperation.folderId, "memo_folder_personal_operation");
+  const personalFolderState = await (await adminFetch("/api/admin/state")).json();
+  assert.ok(personalFolderState.memoFolders.some(folder => folder.id === "memo_folder_personal_knowledge" && folder.name === "20-个人关注知识"));
+  assert.ok(personalFolderState.memoFolders.some(folder => folder.id === "memo_folder_personal_operation" && folder.name === "99-个人操作提醒"));
+  assert.equal((await adminFetch("/api/admin/memo-folders/memo_folder_personal_knowledge", { method: "DELETE" })).status, 409);
+  assert.equal((await adminFetch("/api/admin/memo-folders/memo_folder_personal_operation", { method: "PUT", body: JSON.stringify({ name: "不可改名" }) })).status, 409);
   const updatedResponse = await memberFetch(`/api/personal-memos/${created.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "已更新备忘", body: "测试正文", rule: { includeTerms: ["测试"] } }) });
   assert.equal(updatedResponse.status, 200);
   assert.equal((await updatedResponse.json()).title, "已更新备忘");
@@ -485,6 +596,14 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(eventResponse.status, 201);
   const feedbackResponse = await memberFetch(`/api/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: "admin_demo", deviceId: "forged-device", memoId: secondMemo.id, domain: "feedback.example.com", action: "helpful", presentation: "sidepanel" }) });
   assert.equal(feedbackResponse.status, 201);
+  const feedbackUpResponse = await memberFetch(`/api/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ memoId: secondMemo.id, domain: "feedback.example.com", action: "feedback_up", presentation: "sidepanel" }) });
+  assert.equal(feedbackUpResponse.status, 201);
+  assert.equal((await feedbackUpResponse.json()).feedback.action, "feedback_up");
+  const feedbackDownResponse = await memberFetch(`/api/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ memoId: secondMemo.id, domain: "feedback.example.com", action: "feedback_down", presentation: "sidepanel" }) });
+  assert.equal(feedbackDownResponse.status, 201);
+  assert.equal((await feedbackDownResponse.json()).feedback.action, "feedback_down");
+  const feedbackBootstrap = await (await memberFetch("/api/bootstrap")).json();
+  assert.equal(feedbackBootstrap.memos.find(item => item.id === secondMemo.id).myFeedback, "feedback_down");
   const operationResponse = await adminFetch("/api/admin/memos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
     type: "operation",
     title: "每日确认询单",
@@ -537,7 +656,7 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(secondMemoActivity.stats.helpful, 1);
   assert.equal(secondMemoActivity.recentFeedback[0].userId, "user_demo");
   assert.equal(secondMemoActivity.recentFeedback[0].deviceId, "test-device");
-  assert.equal(secondMemoActivity.recentFeedback[0].domain, "feedback.example.com");
+  assert.equal(secondMemoActivity.recentFeedback[0].domain, "example.com");
   assert.equal(adminState.memoActivity.find(item => item.memoId === created.id).createdFromDeviceId, "test-device");
   assert.equal(Object.hasOwn(adminState, "personalAlarms"), false);
   assert.ok(adminState.operationReceipts.some(item => item.memoId === operation.id));
@@ -549,7 +668,8 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   const deletableMemoResponse = await adminFetch("/api/admin/memos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
     title: "待删除组织提醒",
     body: "删除后不应保留 archived 实体",
-    targetUserIds: ["missing_user"],
+    audienceType: "members",
+    targetUserIds: ["user_demo"],
     rule: { includeTerms: ["删除测试"] }
   }) });
   assert.equal(deletableMemoResponse.status, 201);
@@ -557,7 +677,7 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   const deleteOrganizationMemoResponse = await adminFetch(`/api/admin/memos/${deletableMemo.id}`, { method: "DELETE" });
   assert.equal(deleteOrganizationMemoResponse.status, 200);
   const deleteOrganizationMemoResult = await deleteOrganizationMemoResponse.json();
-  assert.deepEqual(deleteOrganizationMemoResult, { ok: true, deletedId: deletableMemo.id, sync: { targetCount: 0, acceptedCount: 0 } });
+  assert.deepEqual(deleteOrganizationMemoResult, { ok: true, deletedId: deletableMemo.id, sync: { targetCount: 1, acceptedCount: 0 } });
   const stateAfterOrganizationDelete = await (await adminFetch("/api/admin/state")).json();
   assert.equal(stateAfterOrganizationDelete.memos.some(item => item.id === deletableMemo.id), false);
   assert.ok(stateAfterOrganizationDelete.auditLog.some(item => item.action === "deleted" && item.entityId === deletableMemo.id));

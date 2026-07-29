@@ -53,7 +53,8 @@ test("3.0 卡片明确区分知识操作与轻中重，网页卡宽度受控", (
   assert.match(css, /#2f7df4/i);
   assert.match(css, /#e4b423/i);
   assert.match(css, /#de4141/i);
-  assert.match(content, /负责：/);
+  assert.doesNotMatch(content, /负责：/);
+  assert.match(content, /提醒：/);
   for (const className of ["cc-card-head", "cc-card-content", "cc-card-footer", "cc-level-pill"]) {
     assert.match(content, new RegExp(className));
   }
@@ -77,10 +78,22 @@ test("3.0 卡片明确区分知识操作与轻中重，网页卡宽度受控", (
   assert.doesNotMatch(content, /class="cc-level"/);
 });
 
+test("未填写有效链接时网页卡片和侧栏都不显示链接入口", () => {
+  const content = read("extension/content/content.js");
+  const sidepanel = read("extension/sidepanel/app.js");
+  assert.match(content, /function validMemoLinks/);
+  assert.match(sidepanel, /function validMemoLinks/);
+  assert.match(content, /const openAction = primaryLink[\s\S]*:\s*"";/);
+  assert.match(content, /const linkMarkup = primaryLink[\s\S]*:\s*"";/);
+  assert.doesNotMatch(content, /data-cc-popover-action="open"[^>]*>查看详情/);
+  assert.doesNotMatch(content, /data-action="open"[^>]*>查看详情/);
+  assert.match(sidepanel, /const links = validMemoLinks\(item\.links\)/);
+});
+
 test("后台支持提醒类型、人员投放、多链接和成员邀请码管理", () => {
   const html = read("admin/index.html");
   const app = read("admin/app.js");
-  for (const token of ["name=\"type\"", "name=\"targetUserIds\"", "name=\"links\"", "member-dialog", "invite-member", "data-operation-start"]) assert.match(html + app, new RegExp(token));
+  for (const token of ["name=\"type\"", "name=\"targetUserIds\"", "name=\"links\"", "member-dialog", "invite-member", "data-operation-window"]) assert.match(html + app, new RegExp(token));
 });
 
 test("组织提醒只提供永久删除，不再保留撤回状态", () => {
@@ -95,4 +108,22 @@ test("组织提醒只提供永久删除，不再保留撤回状态", () => {
   assert.match(server, /req\.method === "DELETE" && collection === "memos"/);
   assert.match(server, /db\[collection\]\.splice\(index, 1\)/);
   assert.match(server, /dispatchPush\(db, \{ type: "sync"/);
+});
+
+test("后台成员分组可新增和编辑", () => {
+  const html = read("admin/index.html");
+  const app = read("admin/app.js");
+  assert.match(html, /id="new-group"/);
+  assert.match(html, /id="group-dialog"/);
+  assert.match(html, /id="group-form"/);
+  assert.match(app, /function openGroup/);
+  assert.match(app, /api\/admin\/groups/);
+  assert.match(app, /data-edit-group/);
+});
+
+test("后台个人提醒系统文件夹可查看但不可删除", () => {
+  const app = read("admin/app.js");
+  assert.match(app, /folder\.systemManaged/);
+  assert.match(app, /selectedFolder\?\.scope === "personal"/);
+  assert.match(app, /item\.scope === "personal"/);
 });

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { cleanMemo, cleanPersonalAlarm, visibleTo, localDateKey } = require("../server.js");
+const { cleanMemo, cleanMemoFolder, cleanPersonalAlarm, visibleTo, localDateKey } = require("../server.js");
 
 test("现有提醒默认迁移为知识提醒，操作提醒必须有有效期限", () => {
   const knowledge = cleanMemo({ title: "旧提醒", rule: {} });
@@ -22,15 +22,19 @@ test("现有提醒默认迁移为知识提醒，操作提醒必须有有效期�
   assert.deepEqual(operation.dailyReminder, { enabled: true, timezone: "Asia/Shanghai" });
 });
 
-test("组织提醒可同时按指定人员和成员组投放", () => {
+test("组织提醒按全体、成员组或指定成员互斥投放", () => {
   const sales = { id: "u_sales", groupIds: ["sales"] };
   const support = { id: "u_support", groupIds: ["support"] };
   const direct = { id: "u_direct", groupIds: ["other"] };
-  const memo = { scope: "organization", targetUserIds: ["u_direct"], targetGroupIds: ["sales"] };
+  const memberMemo = { scope: "organization", audienceType: "members", targetUserIds: ["u_direct"], targetGroupIds: [] };
+  const groupMemo = { scope: "organization", audienceType: "groups", targetUserIds: [], targetGroupIds: ["sales"] };
+  const allMemo = { scope: "organization", audienceType: "all", targetUserIds: [], targetGroupIds: [] };
 
-  assert.equal(visibleTo(memo, sales), true);
-  assert.equal(visibleTo(memo, direct), true);
-  assert.equal(visibleTo(memo, support), false);
+  assert.equal(visibleTo(memberMemo, direct), true);
+  assert.equal(visibleTo(memberMemo, sales), false);
+  assert.equal(visibleTo(groupMemo, sales), true);
+  assert.equal(visibleTo(groupMemo, support), false);
+  assert.equal(visibleTo(allMemo, support), true);
 });
 
 test("三类提醒链接仅保留 HTTP 和 HTTPS 地址", () => {
@@ -47,6 +51,15 @@ test("三类提醒链接仅保留 HTTP 和 HTTPS 地址", () => {
     { label: "SOP", url: "https://example.com/sop" },
     { label: "站内工具", url: "http://localhost/tool" }
   ]);
+});
+
+test("提醒支持后台文件夹归类且不改变触发规则", () => {
+  const folder = cleanMemoFolder({ name: " 报价知识 ", description: "批量导入使用", sortOrder: 2 });
+  const memo = cleanMemo({ title: "报价前核查", folderId: folder.id, rule: { includeTerms: ["报价"], operator: "OR" } });
+  assert.equal(folder.name, "报价知识");
+  assert.equal(folder.status, "active");
+  assert.equal(memo.folderId, folder.id);
+  assert.equal(memo.rule.operator, "OR");
 });
 
 test("操作提醒按成员时区生成每日确认日期", () => {

@@ -3,7 +3,8 @@
   window.__contextCompanionLoaded = true;
 
   const MAX_HIGHLIGHTS = 500;
-  const BLOCKED_SELECTOR = "script,style,noscript,textarea,input,select,option,button,[contenteditable='true'],[contenteditable=''],.cc-toast,.cc-findbar,.cc-annotation-popover,.cc-annotation-pin,.cc-picker-toolbar,mark[data-cc-highlight]";
+  const PAGE_INSTANCE_ID = globalThis.crypto?.randomUUID?.() || `page-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const BLOCKED_SELECTOR = "script,style,noscript,textarea,input,select,option,button,[contenteditable='true'],[contenteditable=''],.cc-toast,.cc-findbar,.cc-annotation-popover,.cc-annotation-pin,.cc-picker-toolbar,.cc-quick-memo-dialog,mark[data-cc-highlight]";
   let bootstrap = null;
   let scanTimer = null;
   let previousMatchIds = new Set();
@@ -17,9 +18,13 @@
   let lastStrategyTestCheckAt = 0;
   const reportedStrategyTests = new Set();
   const visibleToasts = new Map();
+  const toastQueue = [];
+  const dismissedCurrentPageMemoIds = new Set();
+  let activeToastMemoId = null;
   const unresolvedAnchors = new Set();
   let pinEntries = [];
   let activePopoverTarget = null;
+  let lastExcludedState = false;
 
   function send(message) { return chrome.runtime.sendMessage(message).catch(() => null); }
 
@@ -30,7 +35,7 @@
   }
 
   const SCANNABLE_FIELD_SELECTOR = 'input:not([type]), input[type="text"], input[type="search"]';
-  const PAGECUE_UI_SELECTOR = ".cc-toast,.cc-findbar,.cc-annotation-popover,.cc-annotation-pin,.cc-picker-toolbar";
+  const PAGECUE_UI_SELECTOR = ".cc-toast,.cc-findbar,.cc-annotation-popover,.cc-annotation-pin,.cc-picker-toolbar,.cc-quick-memo-dialog";
 
   function isScannableField(field) {
     if (!(field instanceof HTMLInputElement) || !field.matches(SCANNABLE_FIELD_SELECTOR)) return false;
@@ -92,7 +97,7 @@
   function evaluateCurrentMemos(memos = []) {
     const details = new Map();
     for (const memo of memos) {
-      if (!memoIsActive(memo)) continue;
+      if (!memoIsActive(memo) || memo.triggerMode === "broadcast") continue;
       const detail = evaluateMemoOnPage(memo);
       if (detail.result.matched) details.set(memo.id, detail);
     }
@@ -107,15 +112,43 @@
     return detail.matchedUnits.map(unit => `${unit.index}:${ContextRuleEngine.matchSignature(memo.rule || {}, { text: unit.text })}`).join(";");
   }
 
-  function domain() { try { return location.hostname; } catch { return ""; } }
+  function domain() {
+    try {
+      if (location.protocol === "file:") return "file";
+      const hostname = location.hostname.replace(/^www\./i, "").toLowerCase();
+      const parts = hostname.split(".").filter(Boolean);
+      const base = parts.length > 2 ? parts.slice(-2).join(".") : hostname;
+      if (base === "biochemsafebuy.com" && /^\/admin(?:\/|$)/i.test(location.pathname)) return "biochemsafebuy.com/admin";
+      return base || location.protocol.replace(":", "") || "page";
+    } catch {
+      return "page";
+    }
+  }
   function escapeRegex(value) { return value.replace(/[|\\{}()[\]^$+?.*]/g, "\\$&"); }
+  function currentUrl() { return location.href; }
+  function excludedPatterns() {
+    const settings = bootstrap?.settings || {};
+    return [
+      ...(settings.systemExcludedSitePatterns || []),
+      ...(settings.excludedSitePatterns || []),
+      ...(settings.managedExcludedSitePatterns || []),
+      ...(settings.personalExcludedSitePatterns || [])
+    ].filter(Boolean);
+  }
+  function isCurrentPageExcluded() {
+    const patterns = excludedPatterns();
+    return patterns.length > 0 && ContextRuleEngine.matchesSite(currentUrl(), patterns);
+  }
   function templateRank(template) { return ({ light: 1, standard: 2, medium: 2, strong: 3, heavy: 3 })[template] || 2; }
   function normalizeTemplate(template) { return template === "medium" ? "standard" : template === "heavy" ? "strong" : template; }
   function memoTemplate(memo) { return normalizeTemplate(memo?.annotation?.template || memo?.intensity) || (memo?.priority === "important" ? "strong" : memo?.scope === "personal" ? "light" : "standard"); }
   function memoById(id) { return bootstrap?.memos?.find(memo => memo.id === id) || currentMatchedMemos.find(memo => memo.id === id); }
+  function validMemoLinks(links = []) { return Array.isArray(links) ? links.filter(link => /^https?:\/\/\S+/i.test(String(link?.url || "").trim())) : []; }
   function markMemoIds(mark) { return String(mark?.dataset?.memoIds || mark?.dataset?.memoId || "").split(",").filter(Boolean); }
   function memoTypeLabel(memo) { return memo?.type === "operation" ? "操作提醒" : "知识提醒"; }
   function memoLevelLabel(memo) { return ({ light: "轻", standard: "中", strong: "重" })[memoTemplate(memo)] || "中"; }
+  function feedbackButtonAttrs(memo, action) { const selected = memo?.myFeedback === action; return `class="${selected ? "selected" : ""}" aria-pressed="${selected}"`; }
+  function rememberFeedback(memo, action) { if (memo) memo.myFeedback = action; const cached = bootstrap?.memos?.find(item => item.id === memo?.id); if (cached) cached.myFeedback = action; }
   function memoTypeIcon(memo) {
     return memo?.type === "operation"
       ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3M9 5a3 3 0 0 1 6 0m-6 0a3 3 0 0 0 6 0m-6 0h6m3-2 3 3-8 8-4 1 1-4 8-8Z"/></svg>`
@@ -139,6 +172,19 @@
       parent?.normalize();
     });
     document.querySelectorAll(".cc-match-unit").forEach(root => root.classList.remove("cc-match-unit"));
+  }
+
+  function clearPageCueArtifacts() {
+    clearHighlights();
+    clearElementPins();
+    document.querySelectorAll(".cc-toast,.cc-findbar,.cc-annotation-popover").forEach(node => node.remove());
+    visibleToasts.clear();
+    toastQueue.splice(0, toastQueue.length);
+    activeToastMemoId = null;
+    previousMatchIds = new Set();
+    currentMatchedMemos = [];
+    currentMatchDetails = new Map();
+    lastHighlightSignature = "";
   }
 
   function textNodes(root = document.body) {
@@ -212,7 +258,7 @@
     popover.addEventListener("click", async event => {
       const businessLink = event.target.closest("[data-cc-business-link]");
       if (businessLink) {
-        send({ type: "TRACK_EVENT", memoId: businessLink.dataset.memoId, domain: domain(), action: "opened", presentation: "annotation_link" });
+        send({ type: "TRACK_EVENT", memoId: businessLink.dataset.memoId, domain: domain(), action: "link_opened", presentation: "annotation_link" });
         return;
       }
       const copyLink = event.target.closest("[data-cc-copy-link]");
@@ -229,6 +275,11 @@
       if (type === "open") await send({ type: "OPEN_MEMO", memoId, domain: domain() });
       if (type === "supplier") await showSupplierCard(action.dataset.supplierId);
       if (type === "comments") await toggleCardComments(action.closest(".cc-card"), memoId);
+      if (type === "feedback_up" || type === "feedback_down") {
+        await send({ type: "TRACK_EVENT", memoId, domain: domain(), action: type, presentation: "keyword_card" });
+        rememberFeedback(memoById(memoId), type);
+        action.parentElement?.querySelectorAll('[data-cc-popover-action^="feedback_"]').forEach(button => { const selected = button === action; button.classList.toggle("selected", selected); button.setAttribute("aria-pressed", String(selected)); });
+      }
       if (type === "locate") {
         const result = await focusMemoFresh(memoId);
         if (result.found) hideAnnotationPopover();
@@ -238,8 +289,13 @@
         }
       }
       if (["confirmed", "snoozed"].includes(type)) {
-        await send({ type: "MATCH_ACTION", memoId, domain: domain(), action: type, minutes: 60 });
-        visibleToasts.get(memoId)?.remove(); visibleToasts.delete(memoId);
+        const memo = memoById(memoId);
+        const strongOperation = type === "confirmed" && memo?.type === "operation" && memoTemplate(memo) === "strong";
+        if (strongOperation && !window.confirm("确认已经完成这项操作？确认后，本次页面将关闭提醒。")) return;
+        const result = await send({ type: "MATCH_ACTION", memoId, domain: domain(), action: type, minutes: 60, pageInstanceId: PAGE_INSTANCE_ID });
+        if (result?.error) return;
+        if (strongOperation && result?.dismissedCurrentPage) dismissedCurrentPageMemoIds.add(memoId);
+        dismissToastForPage(memoId);
         hideAnnotationPopover();
       }
     });
@@ -254,20 +310,21 @@
   }
 
   function openAnnotationPopover(target, memoIds, anchorId = "") {
-    const memos = memoIds.map(memoById).filter(Boolean).sort((a,b) => templateRank(memoTemplate(b)) - templateRank(memoTemplate(a)));
+    const memos = memoIds.map(memoById).filter(memo => memo && !dismissedCurrentPageMemoIds.has(memo.id)).sort((a,b) => templateRank(memoTemplate(b)) - templateRank(memoTemplate(a)));
     if (!memos.length) return;
     const popover = ensureAnnotationPopover();
     popover.querySelector("[data-cc-popover-list]").innerHTML = memos.map(memo => {
       const template = memoTemplate(memo);
       const terms = memo.rule?.includeTerms?.join("、") || "页面规则";
-      const primaryLink = (memo.links || []).find(link => /^https?:\/\//i.test(link.url || ""));
+      const primaryLink = validMemoLinks(memo.links)[0];
       const supplierRef = (memo.entityRefs || []).find(ref => ref.type === "supplier");
       const openAction = primaryLink
         ? `<div class="cc-link-actions"><a class="cc-card-link" href="${escapeHtml(primaryLink.url)}" target="_blank" rel="noopener noreferrer" data-cc-business-link data-memo-id="${memo.id}">查看具体信息<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a><button class="cc-copy-link" type="button" data-cc-copy-link="${escapeHtml(primaryLink.url)}" data-memo-id="${memo.id}">复制链接</button></div>`
-        : `<button class="cc-card-link cc-link-button" type="button" data-cc-popover-action="open" data-memo-id="${memo.id}">查看详情</button>`;
+        : "";
       const supplierAction = supplierRef ? `<button class="cc-card-link cc-link-button" type="button" data-cc-popover-action="supplier" data-supplier-id="${escapeHtml(supplierRef.id)}" data-memo-id="${memo.id}">查看供应商</button>` : "";
-      const owner = memo.type === "operation" ? `负责：${bootstrap?.user?.name || "我"}` : memo.scope === "personal" ? "我的知识" : "组织知识";
-      return `<article class="cc-popover-card cc-card cc-template-${template} ${memo.type === "operation" ? "cc-operation-card" : "cc-knowledge-card"}"><header class="cc-card-head"><span class="cc-type"><span class="cc-type-icon">${memoTypeIcon(memo)}</span>${memoTypeLabel(memo)}</span><span class="cc-level-pill">${memoLevelLabel(memo)}</span></header><div class="cc-card-content"><strong>${escapeHtml(memo.title)}</strong><p>${escapeHtml(memo.body.replace(/[*#`]/g, "").slice(0, 130))}</p><div class="cc-meta"><span>${owner}</span><i></i><span class="cc-match">命中：${escapeHtml(terms)}</span><i></i><span>${memo.commentCount || 0} 条评论</span></div></div><footer class="cc-card-footer"><div class="cc-link-actions">${supplierAction}${openAction}</div><div class="cc-actions"><button type="button" data-cc-popover-action="comments" data-memo-id="${memo.id}">评论</button><button type="button" data-cc-popover-action="locate" data-memo-id="${memo.id}">定位</button><button class="cc-primary-action" type="button" data-cc-popover-action="confirmed" data-memo-id="${memo.id}">${memo.type === "operation" ? "完成了" : "知道了"}</button></div></footer></article>`;
+      const leadingActions = supplierAction || openAction ? `<div class="cc-link-actions">${supplierAction}${openAction}</div>` : "";
+      const owner = memo.type === "operation" ? `提醒：${bootstrap?.user?.name || "我"}` : memo.scope === "personal" ? "我的知识" : "组织知识";
+      return `<article class="cc-popover-card cc-card cc-template-${template} ${memo.type === "operation" ? "cc-operation-card" : "cc-knowledge-card"}"><header class="cc-card-head"><span class="cc-type"><span class="cc-type-icon">${memoTypeIcon(memo)}</span>${memoTypeLabel(memo)}</span><span class="cc-level-pill">${memoLevelLabel(memo)}</span></header><div class="cc-card-content"><strong>${escapeHtml(memo.title)}</strong><p>${escapeHtml(memo.body.replace(/[*#`]/g, "").slice(0, 130))}</p><div class="cc-meta"><span>${owner}</span><i></i><span class="cc-match">命中：${escapeHtml(terms)}</span><i></i><span>${memo.commentCount || 0} 条评论</span></div></div><footer class="cc-card-footer">${leadingActions}<div class="cc-actions"><span class="cc-feedback-actions"><button type="button" title="有用" ${feedbackButtonAttrs(memo, "feedback_up")} data-cc-popover-action="feedback_up" data-memo-id="${memo.id}">👍</button><button type="button" title="无用" ${feedbackButtonAttrs(memo, "feedback_down")} data-cc-popover-action="feedback_down" data-memo-id="${memo.id}">👎</button></span><button type="button" data-cc-popover-action="comments" data-memo-id="${memo.id}">评论</button><button type="button" data-cc-popover-action="locate" data-memo-id="${memo.id}">定位</button><button class="cc-primary-action" type="button" data-cc-popover-action="confirmed" data-memo-id="${memo.id}">${memo.type === "operation" ? "完成了" : "知道了"}</button></div></footer></article>`;
     }).join("");
     const rect = target.getBoundingClientRect();
     const width = Math.min(360, window.innerWidth - 20);
@@ -277,11 +334,150 @@
     popover.style.top = `${Math.max(10, rect.bottom + estimatedHeight > window.innerHeight ? rect.top - estimatedHeight - 10 : rect.bottom + 10)}px`;
     popover.classList.add("cc-popover-show");
     activePopoverTarget = target;
-    for (const memo of memos) send({ type: "TRACK_EVENT", memoId: memo.id, domain: domain(), action: "annotation_opened", presentation: anchorId ? "element_anchor" : "keyword", anchorId });
+    for (const memo of memos) {
+      send({ type: "TRACK_EVENT", memoId: memo.id, domain: domain(), action: "highlight_opened", presentation: anchorId ? "element_anchor" : "keyword", anchorId });
+      send({ type: "TRACK_EVENT", memoId: memo.id, domain: domain(), action: "expanded", presentation: anchorId ? "element_anchor" : "keyword", anchorId });
+    }
   }
 
   function escapeHtml(value = "") {
     return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+  }
+
+  function quickMemoInputContext() {
+    const field = document.activeElement;
+    if (!(field instanceof HTMLInputElement)) {
+      return {
+        type: field instanceof HTMLTextAreaElement ? "textarea" : field?.isContentEditable ? "contenteditable" : "unknown",
+        selectedText: ""
+      };
+    }
+    const selectionStart = Number.isInteger(field.selectionStart) ? field.selectionStart : 0;
+    const selectionEnd = Number.isInteger(field.selectionEnd) ? field.selectionEnd : selectionStart;
+    return {
+      type: field.type || "",
+      name: field.name || "",
+      id: field.id || "",
+      autocomplete: field.autocomplete || "",
+      selectedText: field.value.slice(selectionStart, selectionEnd).trim(),
+      formHasPassword: Boolean(field.form?.querySelector('input[type="password"]'))
+    };
+  }
+
+  function quickMemoPolicyMessage(reason) {
+    return ({
+      line_break: "关键词不允许换行",
+      too_short: "关键词至少需要2个字符",
+      too_long: "每个关键词最多20个字符",
+      unsafe_input_type: "只支持普通单行文本框和搜索框",
+      selection_mismatch: "未能确认实际选中的字符，请重新选择",
+      sensitive_field: "该输入框可能包含敏感信息，不能创建提醒",
+      sensitive_form: "包含密码框的表单不能创建提醒"
+    })[reason] || "没有识别到可用的关键词";
+  }
+
+  function currentSitePattern(pageUrl = location.href) {
+    try {
+      const url = new URL(pageUrl);
+      if (url.protocol === "http:" || url.protocol === "https:") return `${url.origin}/*`;
+      return "file:///*";
+    } catch {
+      return location.href;
+    }
+  }
+
+  function showQuickMemoNotice(message, tone = "success") {
+    document.querySelector(".cc-quick-memo-notice")?.remove();
+    const notice = document.createElement("div");
+    notice.className = `cc-quick-memo-notice cc-${tone}`;
+    notice.textContent = message;
+    document.documentElement.appendChild(notice);
+    requestAnimationFrame(() => notice.classList.add("cc-show"));
+    setTimeout(() => {
+      notice.classList.remove("cc-show");
+      setTimeout(() => notice.remove(), 180);
+    }, 2200);
+  }
+
+  async function openQuickMemoComposer(message = {}) {
+    if (!bootstrap) await loadBootstrap();
+    const validation = PageCueQuickCreatePolicy.validateSelection(message.selectionText, {
+      editable: message.editable === true,
+      input: message.editable ? quickMemoInputContext() : null
+    });
+    if (!validation.ok) {
+      showQuickMemoNotice(quickMemoPolicyMessage(validation.reason), "warning");
+      return;
+    }
+    const terms = validation.terms;
+    document.querySelector(".cc-quick-memo-dialog")?.remove();
+    const canPublishOrganization = bootstrap?.capabilities?.canPublishOrganizationMemos === true;
+    const pageGroups = Array.isArray(bootstrap?.pageGroups) ? bootstrap.pageGroups : [];
+    const selectedLabel = terms.join(" / ");
+    const root = document.createElement("div");
+    root.className = "cc-quick-memo-dialog";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-modal", "true");
+    root.setAttribute("aria-label", "页知创建提醒");
+    const audienceField = canPublishOrganization
+      ? `<label><span>提醒对象</span><select name="scope"><option value="personal">仅自己</option><option value="organization">全体成员</option></select></label>`
+      : `<input type="hidden" name="scope" value="personal"><div class="cc-quick-permission"><span>提醒对象</span><strong>仅自己</strong><small>当前分组不可发布全员提醒</small></div>`;
+    const pageGroupOptions = pageGroups.map(group => `<option value="page_group:${escapeHtml(group.id)}">${escapeHtml(group.name)}</option>`).join("");
+    root.innerHTML = `<div class="cc-quick-memo-panel"><header><div><span>页知 · 快速创建</span><strong>把选中的文字变成提醒</strong></div><button type="button" data-quick-close aria-label="关闭">×</button></header><div class="cc-quick-keyword"><small>关键词（OR）</small><b>${escapeHtml(selectedLabel)}</b></div><form><label class="cc-quick-wide"><span>标题</span><input name="title" maxlength="120" required value="关于「${escapeHtml(terms[0])}」的提醒"></label><label class="cc-quick-wide"><span>备注信息 <em>必填</em></span><textarea name="body" rows="3" maxlength="4000" required placeholder="需要记住什么？看到后应该注意或做什么？"></textarea></label><div class="cc-quick-grid"><label><span>提醒类型</span><select name="type"><option value="knowledge">知识提醒</option><option value="operation">操作提醒</option></select></label>${audienceField}<label><span>提醒程度</span><select name="template"><option value="light">轻</option><option value="standard">中</option><option value="strong">重</option></select></label><label><span>生效页面</span><select name="pageRange"><option value="global">全部网页</option><option value="current_site">当前网站</option>${pageGroupOptions}</select></label></div><p class="cc-quick-error" role="alert"></p><footer><button type="button" data-quick-close>取消</button><button type="submit" class="cc-quick-primary">创建提醒</button></footer></form></div>`;
+    const close = () => {
+      root.classList.remove("cc-show");
+      setTimeout(() => root.remove(), 160);
+    };
+    root.querySelectorAll("[data-quick-close]").forEach(button => button.addEventListener("click", close));
+    root.addEventListener("mousedown", event => { if (event.target === root) close(); });
+    root.querySelector("form").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const data = new FormData(form);
+      const submit = form.querySelector('[type="submit"]');
+      const error = form.querySelector(".cc-quick-error");
+      const pageRange = String(data.get("pageRange") || "global");
+      const pageGroupId = pageRange.startsWith("page_group:") ? pageRange.slice("page_group:".length) : "";
+      const template = String(data.get("template") || "light");
+      const memo = {
+        scope: String(data.get("scope") || "personal"),
+        type: String(data.get("type") || "knowledge"),
+        title: String(data.get("title") || "").trim(),
+        body: String(data.get("body") || "").trim(),
+        priority: template === "strong" ? "important" : "normal",
+        rule: {
+          pageScope: pageGroupId ? "page_groups" : pageRange === "global" ? "global" : "page_groups",
+          pageGroupIds: pageGroupId ? [pageGroupId] : [],
+          sitePatterns: pageRange === "current_site" ? [currentSitePattern(message.pageUrl)] : [],
+          includeTerms: terms,
+          excludeTerms: [],
+          operator: "OR",
+          caseSensitive: false,
+          useRegex: false,
+          cooldownMinutes: 30
+        },
+        annotation: { template, keywordTerms: terms, anchors: [] }
+      };
+      error.textContent = "";
+      submit.disabled = true;
+      submit.textContent = "正在创建…";
+      const response = await send({ type: "CREATE_QUICK_MEMO", memo });
+      if (!response?.ok) {
+        error.textContent = response?.error || "创建失败，请确认账号绑定和网络状态";
+        submit.disabled = false;
+        submit.textContent = "创建提醒";
+        return;
+      }
+      close();
+      showQuickMemoNotice(response.memo?.scope === "organization" ? "全员提醒创建成功" : "个人提醒创建成功");
+      await loadBootstrap(true);
+      scheduleScan(100);
+    });
+    document.documentElement.appendChild(root);
+    requestAnimationFrame(() => {
+      root.classList.add("cc-show");
+      root.querySelector("textarea")?.focus();
+    });
   }
 
   async function copyText(value) {
@@ -306,7 +502,7 @@
     panel.querySelector("form").addEventListener("submit", async event => {
       event.preventDefault(); const form = event.currentTarget; const content = form.elements.content.value.trim(); if (!content) return;
       const button = form.querySelector("button"); button.disabled = true;
-      try { await send({ type: "ADD_MEMO_COMMENT", memoId, content }); const result = await send({ type: "GET_MEMO_COMMENTS", memoId }); renderCardComments(panel, memoId, result.comments || []); } catch { button.disabled = false; }
+      try { await send({ type: "ADD_MEMO_COMMENT", memoId, content, domain: domain(), presentation: "reminder_card" }); const result = await send({ type: "GET_MEMO_COMMENTS", memoId }); renderCardComments(panel, memoId, result.comments || []); } catch { button.disabled = false; }
     });
     panel.querySelectorAll("[data-cc-delete-comment]").forEach(button => button.addEventListener("click", async () => { await send({ type: "DELETE_MEMO_COMMENT", commentId: button.dataset.ccDeleteComment }); const result = await send({ type: "GET_MEMO_COMMENTS", memoId }); renderCardComments(panel, memoId, result.comments || []); }));
   }
@@ -315,6 +511,7 @@
     if (!card) return;
     const existing = card.querySelector(".cc-inline-comments");
     if (existing) { existing.remove(); return; }
+    send({ type: "TRACK_EVENT", memoId, domain: domain(), action: "comment_opened", presentation: "reminder_card" });
     const panel = document.createElement("section"); panel.className = "cc-inline-comments"; panel.innerHTML = `<div class="cc-comments-empty">正在加载评论…</div>`;
     card.querySelector(".cc-card-content")?.appendChild(panel);
     try { const result = await send({ type: "GET_MEMO_COMMENTS", memoId }); renderCardComments(panel, memoId, result.comments || []); } catch (error) { panel.innerHTML = `<div class="cc-comments-empty">${escapeHtml(error.message || "评论加载失败")}</div>`; }
@@ -738,7 +935,18 @@
 
   async function scan() {
     if (!bootstrap) await loadBootstrap();
+    if (bootstrap && isCurrentPageExcluded()) {
+      clearPageCueArtifacts();
+      if (!lastExcludedState) send({ type: "PAGE_EXCLUDED", domain: domain() });
+      lastExcludedState = true;
+      return;
+    }
+    lastExcludedState = false;
     if (!bootstrap?.memos?.length) { await runPendingStrategyTests(); return; }
+    for (const memo of bootstrap.pendingBroadcasts || []) {
+      const response = await send({ type: "BROADCAST", memoId: memo.id, domain: domain() });
+      if (response?.accepted) showToast(response.memo);
+    }
     const matches = evaluateCurrentMemos(bootstrap.memos);
     const signature = matches.map(memo => `${memo.id}:${memoMatchSignature(memo)}`).sort().join("|");
     if (signature !== lastHighlightSignature || externalDomChanged) renderHighlights(matches, signature);
@@ -750,8 +958,9 @@
     }
     previousMatchIds = currentMatchIds;
     for (const memo of matches) {
+      if (dismissedCurrentPageMemoIds.has(memo.id)) continue;
       const memoSignature = memoMatchSignature(memo);
-      const response = await send({ type: "MATCH", memoId: memo.id, domain: domain(), signature: memoSignature });
+      const response = await send({ type: "MATCH", memoId: memo.id, domain: domain(), signature: memoSignature, pageInstanceId: PAGE_INSTANCE_ID });
       if (response?.accepted) showToast(response.memo);
     }
     await runPendingStrategyTests();
@@ -762,26 +971,67 @@
     scanTimer = setTimeout(scan, delay);
   }
 
+  function updateToastDockCount() {
+    const count = document.querySelector(".cc-toast .cc-dock-count");
+    const next = document.querySelector(".cc-toast [data-action='next']");
+    if (count) count.textContent = `${toastQueue.length ? 1 : 0} / ${toastQueue.length}`;
+    if (next) next.hidden = toastQueue.length < 2;
+  }
+
+  function dismissToastForPage(memoId) {
+    const index = toastQueue.findIndex(item => item.id === memoId);
+    if (index >= 0) toastQueue.splice(index, 1);
+    visibleToasts.get(memoId)?.remove();
+    visibleToasts.delete(memoId);
+    if (activeToastMemoId === memoId) activeToastMemoId = null;
+    updateToastDockCount();
+    if (!activeToastMemoId && toastQueue.length) renderToast(toastQueue[0]);
+  }
+
   function showToast(memo) {
     const template = memoTemplate(memo);
     if (template === "light") return;
-    if (visibleToasts.has(memo.id)) return;
+    if (toastQueue.some(item => item.id === memo.id)) return;
+    toastQueue.push(memo);
+    updateToastDockCount();
+    if (!activeToastMemoId) renderToast(toastQueue[0]);
+  }
+
+  function renderToast(memo) {
+    const template = memoTemplate(memo);
+    activeToastMemoId = memo.id;
     const root = document.createElement("aside");
     root.className = `cc-toast cc-card cc-template-${template} ${memo.type === "operation" ? "cc-operation-toast" : "cc-knowledge-toast"}`;
     root.setAttribute("role", "status");
     root.classList.toggle("cc-important", template === "strong");
     const terms = memo.rule?.includeTerms?.join("、") || "页面规则";
-    const primaryLink = (memo.links || []).find(link => /^https?:\/\//i.test(link.url || ""));
+    const primaryLink = validMemoLinks(memo.links)[0];
     const supplierRef = (memo.entityRefs || []).find(ref => ref.type === "supplier");
     const linkMarkup = primaryLink
       ? `<div class="cc-link-actions"><a class="cc-card-link" data-action="link" href="${escapeHtml(primaryLink.url)}" target="_blank" rel="noopener noreferrer">查看具体信息<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a><button class="cc-copy-link" type="button" data-action="copy-link" aria-label="复制具体信息链接">复制链接</button></div>`
-      : `<button class="cc-card-link cc-link-button" type="button" data-action="open">查看详情</button>`;
+      : "";
     const supplierMarkup = supplierRef ? `<button class="cc-card-link cc-link-button" type="button" data-action="supplier">查看供应商</button>` : "";
-    root.innerHTML = `<header class="cc-card-head"><span class="cc-type"><span class="cc-type-icon">${memoTypeIcon(memo)}</span>${memoTypeLabel(memo)}</span><span class="cc-level-pill">${memoLevelLabel(memo)}</span></header><div class="cc-card-content"><strong></strong><p></p><div class="cc-meta"><span>${memo.type === "operation" ? `负责：${bootstrap?.user?.name || "我"}` : memo.scope === "personal" ? "我的知识" : "组织知识"}</span><i></i><span class="cc-match">命中：${escapeHtml(terms)}</span><i></i><span>${memo.commentCount || 0} 条评论</span></div></div><footer class="cc-card-footer"><div class="cc-link-actions">${supplierMarkup}${linkMarkup}</div><div class="cc-actions"><button type="button" data-action="comments">评论</button><button type="button" data-action="locate">定位</button><button class="cc-primary-action" type="button" data-action="confirm">${memo.type === "operation" ? "完成了" : "知道了"}</button></div></footer>`;
+    const leadingActions = supplierMarkup || linkMarkup ? `<div class="cc-link-actions">${supplierMarkup}${linkMarkup}</div>` : "";
+    root.innerHTML = `<header class="cc-card-head"><span class="cc-type"><span class="cc-type-icon">${memoTypeIcon(memo)}</span>${memoTypeLabel(memo)}</span><span class="cc-dock-tools"><span class="cc-dock-count">1 / ${toastQueue.length}</span><button type="button" data-action="next" ${toastQueue.length < 2 ? "hidden" : ""}>下一条</button><span class="cc-level-pill">${memoLevelLabel(memo)}</span></span></header><div class="cc-card-content"><strong></strong><p></p><div class="cc-meta"><span>${memo.type === "operation" ? `提醒：${bootstrap?.user?.name || "我"}` : memo.scope === "personal" ? "我的知识" : "组织知识"}</span><i></i><span class="cc-match">${memo.triggerMode === "broadcast" ? "组织广播" : `命中：${escapeHtml(terms)}`}</span><i></i><span>${memo.commentCount || 0} 条评论</span></div></div><footer class="cc-card-footer">${leadingActions}<div class="cc-actions"><span class="cc-feedback-actions"><button type="button" title="有用" ${feedbackButtonAttrs(memo, "feedback_up")} data-action="feedback_up">👍</button><button type="button" title="无用" ${feedbackButtonAttrs(memo, "feedback_down")} data-action="feedback_down">👎</button></span><button type="button" data-action="comments">评论</button>${memo.triggerMode === "broadcast" ? "" : `<button type="button" data-action="locate">定位</button>`}<button class="cc-primary-action" type="button" data-action="confirm">${memo.type === "operation" ? "完成了" : "知道了"}</button></div></footer>`;
     root.querySelector("strong").textContent = memo.title;
     root.querySelector("p").textContent = memo.body.replace(/[*#`]/g, "").slice(0, 130);
-    const remove = () => { root.classList.add("cc-leave"); setTimeout(() => root.remove(), 220); visibleToasts.delete(memo.id); };
-    root.querySelector('[data-action="locate"]').addEventListener("click", async () => {
+    const remove = () => {
+      const index = toastQueue.findIndex(item => item.id === memo.id);
+      if (index >= 0) toastQueue.splice(index, 1);
+      root.classList.add("cc-leave");
+      visibleToasts.delete(memo.id);
+      activeToastMemoId = null;
+      setTimeout(() => { root.remove(); if (toastQueue.length) renderToast(toastQueue[0]); }, 220);
+    };
+    root.querySelector('[data-action="next"]')?.addEventListener("click", () => {
+      const current = toastQueue.shift();
+      if (current) toastQueue.push(current);
+      root.remove();
+      visibleToasts.delete(memo.id);
+      activeToastMemoId = null;
+      if (toastQueue.length) renderToast(toastQueue[0]);
+    });
+    root.querySelector('[data-action="locate"]')?.addEventListener("click", async () => {
       const result = await focusMemoFresh(memo.id);
       if (result.found) return remove();
       root.querySelector(".cc-match").textContent = result.reason === "no_keywords"
@@ -791,17 +1041,30 @@
     root.querySelector('[data-action="open"]')?.addEventListener("click", async () => { await send({ type: "OPEN_MEMO", memoId: memo.id, domain: domain() }); if (template !== "strong") remove(); });
     root.querySelector('[data-action="supplier"]')?.addEventListener("click", () => showSupplierCard(supplierRef.id));
     root.querySelector('[data-action="comments"]')?.addEventListener("click", () => toggleCardComments(root, memo.id));
-    root.querySelector('[data-action="link"]')?.addEventListener("click", () => send({ type: "TRACK_EVENT", memoId: memo.id, domain: domain(), action: "opened", presentation: "inline_link" }));
+    root.querySelector('[data-action="link"]')?.addEventListener("click", () => send({ type: "TRACK_EVENT", memoId: memo.id, domain: domain(), action: "link_opened", presentation: "inline_link" }));
     root.querySelector('[data-action="copy-link"]')?.addEventListener("click", async event => {
       const copied = await copyText(primaryLink?.url || "");
       event.currentTarget.textContent = copied ? "已复制" : "复制失败";
       if (copied) send({ type: "TRACK_EVENT", memoId: memo.id, domain: domain(), action: "link_copied", presentation: "inline_link" });
     });
     root.querySelector('[data-action="confirm"]')?.addEventListener("click", async event => {
-      await send({ type: "MATCH_ACTION", memoId: memo.id, domain: domain(), action: "confirmed" });
-      if (template === "strong") { event.currentTarget.textContent = memo.type === "operation" ? "已记录" : "已知晓"; event.currentTarget.disabled = true; }
+      const strongOperation = memo.type === "operation" && template === "strong";
+      if (strongOperation && !window.confirm("确认已经完成这项操作？确认后，本次页面将关闭提醒。")) return;
+      const result = await send({ type: "MATCH_ACTION", memoId: memo.id, domain: domain(), action: "confirmed", pageInstanceId: PAGE_INSTANCE_ID });
+      if (result?.error) return;
+      if (memo.triggerMode === "broadcast" || result?.broadcastAcknowledged) remove();
+      else if (strongOperation && result?.dismissedCurrentPage) {
+        dismissedCurrentPageMemoIds.add(memo.id);
+        dismissToastForPage(memo.id);
+      }
+      else if (template === "strong") { event.currentTarget.textContent = "已知晓"; event.currentTarget.disabled = true; }
       else remove();
     });
+    root.querySelectorAll('[data-action^="feedback_"]').forEach(button => button.addEventListener("click", async () => {
+      await send({ type: "TRACK_EVENT", memoId: memo.id, domain: domain(), action: button.dataset.action, presentation: memo.triggerMode === "broadcast" ? "broadcast" : "popup" });
+      rememberFeedback(memo, button.dataset.action);
+      root.querySelectorAll('[data-action^="feedback_"]').forEach(item => { const selected = item === button; item.classList.toggle("selected", selected); item.setAttribute("aria-pressed", String(selected)); });
+    }));
     document.documentElement.appendChild(root);
     requestAnimationFrame(() => root.classList.add("cc-show"));
     visibleToasts.set(memo.id, root);
@@ -809,6 +1072,19 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "BOOTSTRAP_UPDATED") loadBootstrap().then(() => scheduleScan(100));
+    if (message.type === "OPEN_QUICK_MEMO") {
+      openQuickMemoComposer(message)
+        .then(() => sendResponse({ ok: true }))
+        .catch(error => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+    if (message.type === "DISMISS_MATCH_CARD") {
+      dismissedCurrentPageMemoIds.add(message.memoId);
+      dismissToastForPage(message.memoId);
+      hideAnnotationPopover();
+      sendResponse({ ok: true });
+      return;
+    }
     if (message.type === "FOCUS_MATCH") {
       focusMemoFresh(message.memoId)
         .then(sendResponse)
@@ -829,13 +1105,12 @@
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local" || !changes.bootstrap?.newValue) return;
-    bootstrap = changes.bootstrap.newValue;
-    scheduleScan(100);
+    loadBootstrap().then(() => scheduleScan(100));
   });
 
   const observer = new MutationObserver(mutations => {
     if (highlighting) return;
-    if (mutations.every(item => [...item.addedNodes].every(node => node.nodeType === 1 && (node.classList?.contains("cc-toast") || node.classList?.contains("cc-findbar") || node.classList?.contains("cc-annotation-pin") || node.classList?.contains("cc-annotation-popover") || node.classList?.contains("cc-picker-toolbar"))))) return;
+    if (mutations.every(item => [...item.addedNodes].every(node => node.nodeType === 1 && (node.classList?.contains("cc-toast") || node.classList?.contains("cc-findbar") || node.classList?.contains("cc-annotation-pin") || node.classList?.contains("cc-annotation-popover") || node.classList?.contains("cc-picker-toolbar") || node.classList?.contains("cc-quick-memo-dialog") || node.classList?.contains("cc-quick-memo-notice"))))) return;
     externalDomChanged = true;
     scheduleScan();
   });
@@ -844,16 +1119,18 @@
   document.addEventListener("change", event => { if (isScannableField(event.target)) scheduleScan(120); }, true);
   window.addEventListener("scroll", positionElementPins, { passive: true });
   window.addEventListener("resize", positionElementPins, { passive: true });
-  window.addEventListener("popstate", () => scheduleScan(100));
-  window.addEventListener("hashchange", () => scheduleScan(100));
+  window.addEventListener("popstate", () => { send({ type: "PAGE_OPENED" }); scheduleScan(100); });
+  window.addEventListener("hashchange", () => { send({ type: "PAGE_OPENED" }); scheduleScan(100); });
   for (const method of ["pushState", "replaceState"]) {
     const original = history[method];
-    history[method] = function (...args) { const result = original.apply(this, args); scheduleScan(100); return result; };
+    history[method] = function (...args) { const result = original.apply(this, args); send({ type: "PAGE_OPENED" }); scheduleScan(100); return result; };
   }
   const annotationRequest = annotationRequestFromHash();
   if (annotationRequest) history.replaceState(null, "", `${location.pathname}${location.search}`);
   loadBootstrap().then(async () => {
+    send({ type: "PAGE_OPENED" });
     if (annotationRequest) await startAnnotationPicker(annotationRequest.code, annotationRequest);
     scheduleScan(100);
   });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") send({ type: "PAGE_OPENED" }).then(result => { if (result?.changed) loadBootstrap(true).then(() => scheduleScan(100)); }); });
 })();
