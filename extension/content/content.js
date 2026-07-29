@@ -319,20 +319,28 @@
       const primaryLink = validMemoLinks(memo.links)[0];
       const supplierRef = (memo.entityRefs || []).find(ref => ref.type === "supplier");
       const openAction = primaryLink
-        ? `<div class="cc-link-actions"><a class="cc-card-link" href="${escapeHtml(primaryLink.url)}" target="_blank" rel="noopener noreferrer" data-cc-business-link data-memo-id="${memo.id}">查看具体信息<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a><button class="cc-copy-link" type="button" data-cc-copy-link="${escapeHtml(primaryLink.url)}" data-memo-id="${memo.id}">复制链接</button></div>`
+        ? `<a class="cc-card-link" href="${escapeHtml(primaryLink.url)}" target="_blank" rel="noopener noreferrer" data-cc-business-link data-memo-id="${memo.id}">查看具体信息<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a><button class="cc-copy-link" type="button" data-cc-copy-link="${escapeHtml(primaryLink.url)}" data-memo-id="${memo.id}">复制链接</button>`
         : "";
       const supplierAction = supplierRef ? `<button class="cc-card-link cc-link-button" type="button" data-cc-popover-action="supplier" data-supplier-id="${escapeHtml(supplierRef.id)}" data-memo-id="${memo.id}">查看供应商</button>` : "";
-      const leadingActions = supplierAction || openAction ? `<div class="cc-link-actions">${supplierAction}${openAction}</div>` : "";
+      const leadingActions = supplierAction || openAction ? `<div class="cc-resource-row"><div class="cc-link-actions">${supplierAction}${openAction}</div></div>` : "";
       const owner = memo.type === "operation" ? `提醒：${bootstrap?.user?.name || "我"}` : memo.scope === "personal" ? "我的知识" : "组织知识";
-      return `<article class="cc-popover-card cc-card cc-template-${template} ${memo.type === "operation" ? "cc-operation-card" : "cc-knowledge-card"}"><header class="cc-card-head"><span class="cc-type"><span class="cc-type-icon">${memoTypeIcon(memo)}</span>${memoTypeLabel(memo)}</span><span class="cc-level-pill">${memoLevelLabel(memo)}</span></header><div class="cc-card-content"><strong>${escapeHtml(memo.title)}</strong><p>${escapeHtml(memo.body.replace(/[*#`]/g, "").slice(0, 130))}</p><div class="cc-meta"><span>${owner}</span><i></i><span class="cc-match">命中：${escapeHtml(terms)}</span><i></i><span>${memo.commentCount || 0} 条评论</span></div></div><footer class="cc-card-footer">${leadingActions}<div class="cc-actions"><span class="cc-feedback-actions"><button type="button" title="有用" ${feedbackButtonAttrs(memo, "feedback_up")} data-cc-popover-action="feedback_up" data-memo-id="${memo.id}">👍</button><button type="button" title="无用" ${feedbackButtonAttrs(memo, "feedback_down")} data-cc-popover-action="feedback_down" data-memo-id="${memo.id}">👎</button></span><button type="button" data-cc-popover-action="comments" data-memo-id="${memo.id}">评论</button><button type="button" data-cc-popover-action="locate" data-memo-id="${memo.id}">定位</button><button class="cc-primary-action" type="button" data-cc-popover-action="confirmed" data-memo-id="${memo.id}">${memo.type === "operation" ? "完成了" : "知道了"}</button></div></footer></article>`;
+      return `<article class="cc-popover-card cc-card cc-template-${template} ${memo.type === "operation" ? "cc-operation-card" : "cc-knowledge-card"}"><header class="cc-card-head"><span class="cc-type"><span class="cc-type-icon">${memoTypeIcon(memo)}</span>${memoTypeLabel(memo)}</span><span class="cc-level-pill">${memoLevelLabel(memo)}</span></header><div class="cc-card-content"><strong>${escapeHtml(memo.title)}</strong><p>${escapeHtml(memo.body.replace(/[*#`]/g, "").slice(0, 130))}</p><div class="cc-meta"><span>${owner}</span><i></i><span class="cc-match">命中：${escapeHtml(terms)}</span><i></i><span>${memo.commentCount || 0} 条评论</span></div></div><footer class="cc-card-footer">${leadingActions}<div class="cc-action-row"><div class="cc-actions"><span class="cc-feedback-actions"><button type="button" title="有用" ${feedbackButtonAttrs(memo, "feedback_up")} data-cc-popover-action="feedback_up" data-memo-id="${memo.id}">👍</button><button type="button" title="无用" ${feedbackButtonAttrs(memo, "feedback_down")} data-cc-popover-action="feedback_down" data-memo-id="${memo.id}">👎</button></span><button type="button" data-cc-popover-action="comments" data-memo-id="${memo.id}">评论</button><button type="button" data-cc-popover-action="locate" data-memo-id="${memo.id}">定位</button><button class="cc-primary-action" type="button" data-cc-popover-action="confirmed" data-memo-id="${memo.id}">${memo.type === "operation" ? "完成了" : "知道了"}</button></div></div></footer></article>`;
     }).join("");
     const rect = target.getBoundingClientRect();
     const width = Math.min(360, window.innerWidth - 20);
     popover.style.width = `${width}px`;
     popover.style.left = `${Math.max(10, Math.min(window.innerWidth - width - 10, rect.left))}px`;
-    const estimatedHeight = Math.min(560, 220 * memos.length);
-    popover.style.top = `${Math.max(10, rect.bottom + estimatedHeight > window.innerHeight ? rect.top - estimatedHeight - 10 : rect.bottom + 10)}px`;
+    popover.style.visibility = "hidden";
     popover.classList.add("cc-popover-show");
+    requestAnimationFrame(() => {
+      if (!popover.isConnected || !target.isConnected) return;
+      const targetRect = target.getBoundingClientRect();
+      const actualHeight = Math.min(popover.scrollHeight, window.innerHeight - 20);
+      const fitsBelow = targetRect.bottom + actualHeight + 10 <= window.innerHeight;
+      const top = fitsBelow ? targetRect.bottom + 10 : Math.max(10, targetRect.top - actualHeight - 10);
+      popover.style.top = `${Math.min(top, window.innerHeight - actualHeight - 10)}px`;
+      popover.style.visibility = "visible";
+    });
     activePopoverTarget = target;
     for (const memo of memos) {
       send({ type: "TRACK_EVENT", memoId: memo.id, domain: domain(), action: "highlight_opened", presentation: anchorId ? "element_anchor" : "keyword", anchorId });
@@ -568,6 +576,56 @@
     bar.classList.toggle("cc-findbar-show", marks.length > 0);
   }
 
+  function scrollableAncestors(element) {
+    const ancestors = [];
+    for (let parent = element?.parentElement; parent && parent !== document.body && parent !== document.documentElement; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (/(auto|scroll|overlay)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1) ancestors.push(parent);
+    }
+    return ancestors;
+  }
+
+  function centerHighlightInViewport(active) {
+    for (const container of scrollableAncestors(active)) {
+      const targetRect = active.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+      const top = PageCueScroll.centeredScrollTop({
+        currentScroll: container.scrollTop,
+        targetStart: targetRect.top,
+        targetSize: targetRect.height,
+        containerStart: containerRect.top,
+        containerSize: containerRect.height,
+        maxScroll
+      });
+      container.scrollTo({ top, left: container.scrollLeft, behavior: "auto" });
+    }
+
+    const scrollingElement = document.scrollingElement || document.documentElement;
+    const targetRect = active.getBoundingClientRect();
+    const maxScroll = Math.max(0, scrollingElement.scrollHeight - window.innerHeight);
+    const top = PageCueScroll.centeredScrollTop({
+      currentScroll: scrollingElement.scrollTop,
+      targetStart: targetRect.top,
+      targetSize: targetRect.height,
+      containerStart: 0,
+      containerSize: window.innerHeight,
+      maxScroll
+    });
+    window.scrollTo({ top, left: window.scrollX, behavior: "auto" });
+
+    const correctPosition = () => {
+      if (!active.isConnected) return;
+      const rect = active.getBoundingClientRect();
+      const delta = rect.top + rect.height / 2 - window.innerHeight / 2;
+      if (Math.abs(delta) > 2) window.scrollBy({ top: delta, left: 0, behavior: "auto" });
+    };
+    requestAnimationFrame(() => {
+      correctPosition();
+      requestAnimationFrame(correctPosition);
+    });
+  }
+
   function focusHighlight(index = 0, memoId = null) {
     focusedMemoId = memoId || null;
     const marks = allHighlights(focusedMemoId);
@@ -576,8 +634,7 @@
     allHighlights().forEach(mark => mark.classList.remove("cc-keyword-active"));
     const active = marks[currentHighlightIndex];
     active.classList.add("cc-keyword-active");
-    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    active.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center", inline: "nearest" });
+    centerHighlightInViewport(active);
     active.focus({ preventScroll: true });
     updateFindBar(marks, active);
     return true;
@@ -1008,11 +1065,11 @@
     const primaryLink = validMemoLinks(memo.links)[0];
     const supplierRef = (memo.entityRefs || []).find(ref => ref.type === "supplier");
     const linkMarkup = primaryLink
-      ? `<div class="cc-link-actions"><a class="cc-card-link" data-action="link" href="${escapeHtml(primaryLink.url)}" target="_blank" rel="noopener noreferrer">查看具体信息<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a><button class="cc-copy-link" type="button" data-action="copy-link" aria-label="复制具体信息链接">复制链接</button></div>`
+      ? `<a class="cc-card-link" data-action="link" href="${escapeHtml(primaryLink.url)}" target="_blank" rel="noopener noreferrer">查看具体信息<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a><button class="cc-copy-link" type="button" data-action="copy-link" aria-label="复制具体信息链接">复制链接</button>`
       : "";
     const supplierMarkup = supplierRef ? `<button class="cc-card-link cc-link-button" type="button" data-action="supplier">查看供应商</button>` : "";
-    const leadingActions = supplierMarkup || linkMarkup ? `<div class="cc-link-actions">${supplierMarkup}${linkMarkup}</div>` : "";
-    root.innerHTML = `<header class="cc-card-head"><span class="cc-type"><span class="cc-type-icon">${memoTypeIcon(memo)}</span>${memoTypeLabel(memo)}</span><span class="cc-dock-tools"><span class="cc-dock-count">1 / ${toastQueue.length}</span><button type="button" data-action="next" ${toastQueue.length < 2 ? "hidden" : ""}>下一条</button><span class="cc-level-pill">${memoLevelLabel(memo)}</span></span></header><div class="cc-card-content"><strong></strong><p></p><div class="cc-meta"><span>${memo.type === "operation" ? `提醒：${bootstrap?.user?.name || "我"}` : memo.scope === "personal" ? "我的知识" : "组织知识"}</span><i></i><span class="cc-match">${memo.triggerMode === "broadcast" ? "组织广播" : `命中：${escapeHtml(terms)}`}</span><i></i><span>${memo.commentCount || 0} 条评论</span></div></div><footer class="cc-card-footer">${leadingActions}<div class="cc-actions"><span class="cc-feedback-actions"><button type="button" title="有用" ${feedbackButtonAttrs(memo, "feedback_up")} data-action="feedback_up">👍</button><button type="button" title="无用" ${feedbackButtonAttrs(memo, "feedback_down")} data-action="feedback_down">👎</button></span><button type="button" data-action="comments">评论</button>${memo.triggerMode === "broadcast" ? "" : `<button type="button" data-action="locate">定位</button>`}<button class="cc-primary-action" type="button" data-action="confirm">${memo.type === "operation" ? "完成了" : "知道了"}</button></div></footer>`;
+    const leadingActions = supplierMarkup || linkMarkup ? `<div class="cc-resource-row"><div class="cc-link-actions">${supplierMarkup}${linkMarkup}</div></div>` : "";
+    root.innerHTML = `<header class="cc-card-head"><span class="cc-type"><span class="cc-type-icon">${memoTypeIcon(memo)}</span>${memoTypeLabel(memo)}</span><span class="cc-dock-tools"><span class="cc-dock-count">1 / ${toastQueue.length}</span><button type="button" data-action="next" ${toastQueue.length < 2 ? "hidden" : ""}>下一条</button><span class="cc-level-pill">${memoLevelLabel(memo)}</span></span></header><div class="cc-card-content"><strong></strong><p></p><div class="cc-meta"><span>${memo.type === "operation" ? `提醒：${bootstrap?.user?.name || "我"}` : memo.scope === "personal" ? "我的知识" : "组织知识"}</span><i></i><span class="cc-match">${memo.triggerMode === "broadcast" ? "组织广播" : `命中：${escapeHtml(terms)}`}</span><i></i><span>${memo.commentCount || 0} 条评论</span></div></div><footer class="cc-card-footer">${leadingActions}<div class="cc-action-row"><div class="cc-actions"><span class="cc-feedback-actions"><button type="button" title="有用" ${feedbackButtonAttrs(memo, "feedback_up")} data-action="feedback_up">👍</button><button type="button" title="无用" ${feedbackButtonAttrs(memo, "feedback_down")} data-action="feedback_down">👎</button></span><button type="button" data-action="comments">评论</button>${memo.triggerMode === "broadcast" ? "" : `<button type="button" data-action="locate">定位</button>`}<button class="cc-primary-action" type="button" data-action="confirm">${memo.type === "operation" ? "完成了" : "知道了"}</button></div></div></footer>`;
     root.querySelector("strong").textContent = memo.title;
     root.querySelector("p").textContent = memo.body.replace(/[*#`]/g, "").slice(0, 130);
     const remove = () => {

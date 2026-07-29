@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "页知 PageCue",
-  "version": "3.2.7",
+  "version": "3.2.8",
   "minimum_chrome_version": "116",
   "description": "在网页中呈现分级知识提醒、操作提醒和团队工具。",
   "permissions": [
@@ -50,6 +50,7 @@
       "js": [
         "shared/quick-create-policy.js",
         "shared/rule-engine.js",
+        "shared/scroll-position.js",
         "content/content.js"
       ],
       "css": [

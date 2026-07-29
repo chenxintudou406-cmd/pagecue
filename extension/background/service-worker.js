@@ -421,7 +421,7 @@ async function registerSites(excludedPatterns = [], managedExcludedPatterns = []
     await chrome.scripting.registerContentScripts([{
       id: CONTENT_SCRIPT_ID,
       matches: permitted,
-      js: ["shared/quick-create-policy.js", "shared/rule-engine.js", "content/content.js"],
+      js: ["shared/quick-create-policy.js", "shared/rule-engine.js", "shared/scroll-position.js", "content/content.js"],
       css: ["content/content.css"],
       allFrames: true,
       runAt: "document_idle",
