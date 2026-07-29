@@ -89,7 +89,8 @@ if (chrome.contextMenus?.onClicked) chrome.contextMenus.onClicked.addListener(as
   await sendContentMessage(tab.id, {
     type: "OPEN_QUICK_MEMO",
     selectionText,
-    pageUrl: info.frameUrl || info.pageUrl || tab.url || "",
+    pageUrl: info.pageUrl || tab.url || info.frameUrl || "",
+    frameUrl: info.frameUrl || "",
     editable: info.editable === true
   }, Number.isInteger(info.frameId) ? info.frameId : 0);
 });
@@ -418,15 +419,18 @@ async function registerSites(excludedPatterns = [], managedExcludedPatterns = []
   }
   await setConfig({ sitePatterns: [], managedSitePatterns: [], excludedSitePatterns: personalExcludedPatterns, managedExcludedSitePatterns: organizationExcludedPatterns });
   if (permitted.length) {
-    await chrome.scripting.registerContentScripts([{
+    const registration = {
       id: CONTENT_SCRIPT_ID,
       matches: permitted,
       js: ["shared/quick-create-policy.js", "shared/rule-engine.js", "shared/scroll-position.js", "content/content.js"],
       css: ["content/content.css"],
       allFrames: true,
+      matchAboutBlank: true,
       runAt: "document_idle",
       persistAcrossSessions: true
-    }]);
+    };
+    if (chromiumMajorVersion() >= 119) registration.matchOriginAsFallback = true;
+    await chrome.scripting.registerContentScripts([registration]);
   }
   notifyContentScripts({ type: "BOOTSTRAP_UPDATED" });
   return permitted;
@@ -445,6 +449,11 @@ function isFileAccessAllowed() {
       resolve(false);
     }
   });
+}
+
+function chromiumMajorVersion() {
+  const match = String(navigator.userAgent || "").match(/(?:Chrome|Chromium)\/(\d+)/i);
+  return Number(match?.[1] || 0);
 }
 
 async function hasOriginPermission(pattern, fileAccessAllowed = false) {
@@ -704,7 +713,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case "FOCUS_IN_PAGE": {
         const tabId = message.tabId || sender.tab?.id;
         if (!tabId) return sendResponse({ found: false, error: "missing_tab" });
-        const result = await chrome.tabs.sendMessage(tabId, { type: "FOCUS_MATCH", memoId: message.memoId }).catch(() => ({ found: false, reason: "page_unavailable" }));
+        const { activeMatches = {} } = await chrome.storage.local.get("activeMatches");
+        const activeMatch = (activeMatches[String(tabId)] || []).find(item => item.memoId === message.memoId);
+        const options = Number.isInteger(activeMatch?.frameId) ? { frameId: activeMatch.frameId } : {};
+        const result = await chrome.tabs.sendMessage(tabId, { type: "FOCUS_MATCH", memoId: message.memoId }, options).catch(() => ({ found: false, reason: "page_unavailable" }));
         return sendResponse(result || { found: false });
       }
       case "GET_CONTEXT": {

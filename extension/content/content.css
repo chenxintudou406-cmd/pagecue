@@ -19,6 +19,15 @@ mark[data-cc-highlight].cc-operation-highlight.cc-template-standard { background
 mark[data-cc-highlight].cc-operation-highlight.cc-template-strong { background:#f39b9b !important; border-bottom-color:#a52222 !important; }
 mark[data-cc-highlight]:hover { background:#ffc85f !important; }
 mark[data-cc-highlight].cc-keyword-active { background:#ff9f80 !important; border-bottom-color:#9f301d !important; outline:3px solid rgba(216,101,77,.3) !important; box-shadow:0 0 0 5px rgba(255,159,128,.16) !important; }
+.cc-rich-highlight[data-cc-highlight] { all:initial; position:fixed; z-index:2147483644; box-sizing:border-box; margin:0; padding:0; border:0; border-bottom:2px solid #c36d1f; border-radius:2px; outline:0; background:rgba(255,225,117,.58); box-shadow:inset 0 -1px 0 rgba(122,72,18,.18); cursor:pointer; }
+.cc-rich-highlight[data-cc-highlight][hidden] { display:none; }
+.cc-rich-highlight[data-cc-highlight].cc-template-light { border-bottom-color:#2f7df4; background:rgba(220,236,255,.58); }
+.cc-rich-highlight[data-cc-highlight].cc-template-strong { border-bottom-color:#a93220; background:rgba(255,173,148,.62); box-shadow:inset 0 -1px 0 rgba(159,48,29,.24),0 0 0 2px rgba(216,101,77,.12); }
+.cc-rich-highlight[data-cc-highlight].cc-operation-highlight.cc-template-light { border-bottom-color:#1f69d8; background:rgba(188,220,255,.62); }
+.cc-rich-highlight[data-cc-highlight].cc-operation-highlight.cc-template-standard { border-bottom-color:#9c7200; background:rgba(247,214,90,.62); }
+.cc-rich-highlight[data-cc-highlight].cc-operation-highlight.cc-template-strong { border-bottom-color:#a52222; background:rgba(243,155,155,.64); }
+.cc-rich-highlight[data-cc-highlight]:hover { background:rgba(255,200,95,.72); }
+.cc-rich-highlight[data-cc-highlight].cc-keyword-active { border-bottom-color:#9f301d; outline:3px solid rgba(216,101,77,.3); background:rgba(255,159,128,.72); box-shadow:0 0 0 5px rgba(255,159,128,.16); }
 .cc-match-unit { outline:2px solid rgba(21,95,157,.72) !important; outline-offset:3px !important; scroll-margin-block:120px !important; }
 .cc-findbar { all:initial; position:fixed; z-index:2147483647; top:16px; right:18px; min-width:282px; max-width:calc(100vw - 24px); padding:8px; display:none; grid-template-columns:minmax(90px,1fr) auto 28px 28px 28px; gap:5px; align-items:center; border:1px solid rgba(18,45,49,.2); border-radius:10px; background:#fff; box-shadow:0 12px 38px rgba(16,45,50,.2); color:#172326; font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif; }
 .cc-findbar.cc-findbar-show { display:grid; }

@@ -3,6 +3,17 @@
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.PageCueQuickCreatePolicy = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  const TRUSTED_RICH_TEXT_HOSTS = ["feishu.cn", "larksuite.com"];
+
+  function isTrustedRichTextUrl(value) {
+    try {
+      const hostname = new URL(String(value || "")).hostname.toLowerCase();
+      return TRUSTED_RICH_TEXT_HOSTS.some(host => hostname === host || hostname.endsWith(`.${host}`));
+    } catch {
+      return false;
+    }
+  }
+
   function validateSelection(value, options = {}) {
     const raw = String(value || "");
     if (/[\r\n]/.test(raw)) return { ok: false, reason: "line_break" };
@@ -12,7 +23,9 @@
     if (terms.some(term => Array.from(term).length > 20)) return { ok: false, reason: "too_long" };
     if (options.editable) {
       const input = options.input || {};
-      if (!["", "text", "search"].includes(String(input.type || "").toLowerCase())) {
+      const inputType = String(input.type || "").toLowerCase();
+      const trustedRichText = inputType === "contenteditable" && input.trustedRichText === true;
+      if (!["", "text", "search"].includes(inputType) && !trustedRichText) {
         return { ok: false, reason: "unsafe_input_type" };
       }
       if (input.selectedText !== selected) return { ok: false, reason: "selection_mismatch" };
@@ -25,5 +38,5 @@
     return terms.length ? { ok: true, terms } : { ok: false, reason: "empty" };
   }
 
-  return { validateSelection };
+  return { validateSelection, isTrustedRichTextUrl };
 });

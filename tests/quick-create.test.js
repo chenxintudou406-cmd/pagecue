@@ -154,9 +154,13 @@ test("extension exposes a selection context menu and quick reminder composer", (
   assert.match(worker, /OPEN_QUICK_MEMO/);
   assert.match(worker, /CREATE_QUICK_MEMO/);
   assert.match(worker, /\/api\/quick-memos/);
+  assert.match(worker, /activeMatch\?\.frameId/);
   assert.match(content, /OPEN_QUICK_MEMO/);
   assert.match(content, /canPublishOrganizationMemos/);
   assert.match(content, /cc-quick-memo-dialog/);
+  assert.match(content, /isTrustedRichTextPage/);
+  assert.match(content, /cc-rich-highlight/);
+  assert.match(styles, /\.cc-rich-highlight\[data-cc-highlight\]/);
   assert.ok(manifest.content_scripts[0].js.includes("shared/quick-create-policy.js"));
   assert.match(worker, /shared\/quick-create-policy\.js/);
   assert.match(content, /PageCueQuickCreatePolicy\.validateSelection/);

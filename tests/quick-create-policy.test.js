@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { validateSelection } = require("../extension/shared/quick-create-policy.js");
+const { validateSelection, isTrustedRichTextUrl } = require("../extension/shared/quick-create-policy.js");
 
 test("安全单行输入框只返回用户实际选中的关键词", () => {
   const result = validateSelection("氯乙酸", {
@@ -37,6 +37,31 @@ test("可编辑区域只允许普通文本和搜索输入框", () => {
       input: { type, selectedText: "氯乙酸" }
     }), { ok: false, reason: "unsafe_input_type" });
   }
+});
+
+test("飞书可信富文本只允许实际选中的单行关键词", () => {
+  assert.equal(isTrustedRichTextUrl("https://example.feishu.cn/docx/abc"), true);
+  assert.equal(isTrustedRichTextUrl("https://example.larksuite.com/wiki/abc"), true);
+  assert.equal(isTrustedRichTextUrl("https://feishu.cn.attacker.example/docx/abc"), false);
+
+  assert.deepEqual(validateSelection("44444-44-4", {
+    editable: true,
+    input: {
+      type: "contenteditable",
+      selectedText: "44444-44-4",
+      trustedRichText: true,
+      formHasPassword: false
+    }
+  }), { ok: true, terms: ["44444-44-4"] });
+
+  assert.deepEqual(validateSelection("44444-44-4", {
+    editable: true,
+    input: {
+      type: "contenteditable",
+      selectedText: "44444-44-4",
+      trustedRichText: false
+    }
+  }), { ok: false, reason: "unsafe_input_type" });
 });
 
 test("敏感字段和包含密码框的表单禁止创建提醒", () => {

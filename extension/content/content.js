@@ -4,7 +4,8 @@
 
   const MAX_HIGHLIGHTS = 500;
   const PAGE_INSTANCE_ID = globalThis.crypto?.randomUUID?.() || `page-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const BLOCKED_SELECTOR = "script,style,noscript,textarea,input,select,option,button,[contenteditable='true'],[contenteditable=''],.cc-toast,.cc-findbar,.cc-annotation-popover,.cc-annotation-pin,.cc-picker-toolbar,.cc-quick-memo-dialog,mark[data-cc-highlight]";
+  const BLOCKED_SELECTOR = "script,style,noscript,textarea,input,select,option,button,.cc-toast,.cc-findbar,.cc-annotation-popover,.cc-annotation-pin,.cc-picker-toolbar,.cc-quick-memo-dialog,.cc-rich-highlight,mark[data-cc-highlight]";
+  const EDITABLE_SELECTOR = "[contenteditable='true'],[contenteditable=''],[contenteditable='plaintext-only']";
   let bootstrap = null;
   let scanTimer = null;
   let previousMatchIds = new Set();
@@ -23,6 +24,8 @@
   let activeToastMemoId = null;
   const unresolvedAnchors = new Set();
   let pinEntries = [];
+  let richHighlightEntries = [];
+  const richHighlightSources = new WeakMap();
   let activePopoverTarget = null;
   let lastExcludedState = false;
 
@@ -45,12 +48,43 @@
     return !field.form?.querySelector('input[type="password"]');
   }
 
+  function relatedPageUrls(explicitUrl = "") {
+    const ancestors = (() => {
+      try { return [...(location.ancestorOrigins || [])]; } catch { return []; }
+    })();
+    return [...new Set([explicitUrl, location.href, document.referrer, ...ancestors].map(String).filter(Boolean))];
+  }
+
+  function effectivePageUrl(explicitUrl = "") {
+    return relatedPageUrls(explicitUrl).find(value => /^(https?|file):\/\//i.test(value)) || location.href;
+  }
+
+  function isTrustedRichTextPage(explicitUrl = "") {
+    return relatedPageUrls(explicitUrl).some(PageCueQuickCreatePolicy.isTrustedRichTextUrl);
+  }
+
+  function editableRoot(element) {
+    return element instanceof Element ? element.closest(EDITABLE_SELECTOR) : null;
+  }
+
+  function textParentIsBlocked(parent) {
+    if (!(parent instanceof Element) || parent.closest(BLOCKED_SELECTOR)) return true;
+    return Boolean(editableRoot(parent) && !isTrustedRichTextPage());
+  }
+
   function readableText(root = document.body, limit = 2_000_000) {
     if (!root) return "";
     const fieldValues = root.querySelectorAll
       ? [...root.querySelectorAll(SCANNABLE_FIELD_SELECTOR)].filter(isScannableField).map(field => field.value.trim())
       : [];
-    return [root.innerText || "", ...fieldValues].filter(Boolean).join("\n").slice(0, limit);
+    const pageBody = root.innerText || "";
+    const richTextValues = isTrustedRichTextPage() && root.querySelectorAll
+      ? [...root.querySelectorAll(EDITABLE_SELECTOR)]
+        .filter(editor => editor.getClientRects().length > 0)
+        .map(editor => String(editor.innerText || editor.textContent || "").trim())
+        .filter(value => value && !pageBody.includes(value))
+      : [];
+    return [pageBody, ...richTextValues, ...fieldValues].filter(Boolean).join("\n").slice(0, limit);
   }
 
   function pageText() {
@@ -58,7 +92,7 @@
   }
 
   function strategyForRule(rule = {}) {
-    return ContextRuleEngine.resolvePageStrategy(rule, location.href);
+    return ContextRuleEngine.resolvePageStrategy(rule, currentUrl());
   }
 
   function collectMatchUnits(rule = {}) {
@@ -70,7 +104,7 @@
     try {
       const roots = [...document.querySelectorAll(strategy.selector)];
       const units = roots.filter(root => {
-        if (!(root instanceof Element) || root.closest(BLOCKED_SELECTOR) || root.getClientRects().length === 0) return false;
+        if (!(root instanceof Element) || root.closest(BLOCKED_SELECTOR) || (editableRoot(root) && !isTrustedRichTextPage()) || root.getClientRects().length === 0) return false;
         if (strategy.excludeSelector && (root.matches(strategy.excludeSelector) || root.closest(strategy.excludeSelector))) return false;
         return Boolean(readableText(root, 200_000).trim());
       }).map((root, index) => ({ root, text: readableText(root, 200_000), index }));
@@ -89,7 +123,7 @@
 
   function evaluateMemoOnPage(memo) {
     const collected = collectMatchUnits(memo.rule || {});
-    const unitResult = ContextRuleEngine.evaluateRuleUnits(memo.rule || {}, collected.units, { url: location.href });
+    const unitResult = ContextRuleEngine.evaluateRuleUnits(memo.rule || {}, collected.units, { url: currentUrl() });
     const matchedUnits = unitResult.matchedUnitIndexes.map(index => collected.units[index]).filter(Boolean);
     return { memo, ...collected, result: unitResult, matchedUnits };
   }
@@ -114,18 +148,19 @@
 
   function domain() {
     try {
-      if (location.protocol === "file:") return "file";
-      const hostname = location.hostname.replace(/^www\./i, "").toLowerCase();
+      const url = new URL(currentUrl());
+      if (url.protocol === "file:") return "file";
+      const hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
       const parts = hostname.split(".").filter(Boolean);
       const base = parts.length > 2 ? parts.slice(-2).join(".") : hostname;
-      if (base === "biochemsafebuy.com" && /^\/admin(?:\/|$)/i.test(location.pathname)) return "biochemsafebuy.com/admin";
-      return base || location.protocol.replace(":", "") || "page";
+      if (base === "biochemsafebuy.com" && /^\/admin(?:\/|$)/i.test(url.pathname)) return "biochemsafebuy.com/admin";
+      return base || url.protocol.replace(":", "") || "page";
     } catch {
       return "page";
     }
   }
   function escapeRegex(value) { return value.replace(/[|\\{}()[\]^$+?.*]/g, "\\$&"); }
-  function currentUrl() { return location.href; }
+  function currentUrl() { return effectivePageUrl(); }
   function excludedPatterns() {
     const settings = bootstrap?.settings || {};
     return [
@@ -196,6 +231,8 @@
       mark.replaceWith(document.createTextNode(mark.textContent || ""));
       parent?.normalize();
     });
+    document.querySelectorAll(".cc-rich-highlight[data-cc-highlight]").forEach(mark => mark.remove());
+    richHighlightEntries = [];
     document.querySelectorAll(".cc-match-unit").forEach(root => root.classList.remove("cc-match-unit"));
   }
 
@@ -218,13 +255,70 @@
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const parent = node.parentElement;
-        if (!parent || !node.nodeValue?.trim() || parent.closest(BLOCKED_SELECTOR)) return NodeFilter.FILTER_REJECT;
+        if (!parent || !node.nodeValue?.trim() || textParentIsBlocked(parent)) return NodeFilter.FILTER_REJECT;
         if (parent.getClientRects().length === 0) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
     });
     while (walker.nextNode()) nodes.push(walker.currentNode);
     return nodes;
+  }
+
+  function positionRichHighlight(entry) {
+    const { element, range, rectIndex } = entry;
+    if (!element.isConnected) return;
+    const rect = [...range.getClientRects()][rectIndex];
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      element.hidden = true;
+      return;
+    }
+    element.hidden = false;
+    element.style.left = `${rect.left}px`;
+    element.style.top = `${rect.top}px`;
+    element.style.width = `${rect.width}px`;
+    element.style.height = `${rect.height}px`;
+  }
+
+  function positionRichHighlights() {
+    richHighlightEntries.forEach(positionRichHighlight);
+  }
+
+  function createRichHighlight(range, rectIndex, entry) {
+    const mark = document.createElement("button");
+    mark.type = "button";
+    mark.className = `cc-rich-highlight cc-template-${entry.template}`;
+    if (entry.types.includes("operation")) mark.classList.add("cc-operation-highlight");
+    mark.dataset.ccHighlight = "true";
+    mark.dataset.memoId = entry.memoIds[0];
+    mark.dataset.memoIds = entry.memoIds.join(",");
+    mark.dataset.term = entry.term;
+    mark.setAttribute("aria-label", `匹配关键词：${entry.term}`);
+    document.documentElement.appendChild(mark);
+    const source = { element: mark, range, rectIndex };
+    richHighlightEntries.push(source);
+    richHighlightSources.set(mark, source);
+    positionRichHighlight(source);
+    return mark;
+  }
+
+  function highlightRichTextNode(node, regex, entry, remaining) {
+    const text = node.nodeValue || "";
+    let match;
+    let created = 0;
+    regex.lastIndex = 0;
+    while ((match = regex.exec(text)) && created < remaining) {
+      if (!match[0]) break;
+      const range = document.createRange();
+      range.setStart(node, match.index);
+      range.setEnd(node, match.index + match[0].length);
+      const rects = [...range.getClientRects()];
+      for (let index = 0; index < rects.length && created < remaining; index += 1) {
+        if (rects[index].width <= 0 || rects[index].height <= 0) continue;
+        createRichHighlight(range, index, entry);
+        created += 1;
+      }
+    }
+    return created;
   }
 
   function highlightEntry(entry, remaining) {
@@ -234,6 +328,10 @@
     for (const node of textNodes(entry.root)) {
       if (created >= remaining) break;
       const text = node.nodeValue || "";
+      if (editableRoot(node.parentElement)) {
+        created += highlightRichTextNode(node, regex, entry, remaining - created);
+        continue;
+      }
       regex.lastIndex = 0;
       let match;
       let cursor = 0;
@@ -267,7 +365,7 @@
   }
 
   function allHighlights(memoId = null) {
-    const marks = [...document.querySelectorAll("mark[data-cc-highlight]")];
+    const marks = [...document.querySelectorAll("[data-cc-highlight]")];
     return memoId ? marks.filter(mark => markMemoIds(mark).includes(memoId)) : marks;
   }
 
@@ -387,12 +485,32 @@
     return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
   }
 
-  function quickMemoInputContext() {
+  function quickMemoInputContext(pageUrl = "") {
     const field = document.activeElement;
+    const selection = window.getSelection();
+    const selectedText = String(selection?.toString() || "").trim();
+    const anchorElement = selection?.anchorNode?.nodeType === Node.ELEMENT_NODE
+      ? selection.anchorNode
+      : selection?.anchorNode?.parentElement;
+    const focusElement = selection?.focusNode?.nodeType === Node.ELEMENT_NODE
+      ? selection.focusNode
+      : selection?.focusNode?.parentElement;
+    const anchorEditor = editableRoot(anchorElement);
+    const focusEditor = editableRoot(focusElement);
+    if (anchorEditor && anchorEditor === focusEditor) {
+      return {
+        type: "contenteditable",
+        selectedText,
+        trustedRichText: isTrustedRichTextPage(pageUrl),
+        formHasPassword: Boolean(anchorEditor.closest("form")?.querySelector('input[type="password"]'))
+      };
+    }
     if (!(field instanceof HTMLInputElement)) {
       return {
         type: field instanceof HTMLTextAreaElement ? "textarea" : field?.isContentEditable ? "contenteditable" : "unknown",
-        selectedText: ""
+        selectedText,
+        trustedRichText: field?.isContentEditable && isTrustedRichTextPage(pageUrl),
+        formHasPassword: Boolean(field?.closest?.("form")?.querySelector('input[type="password"]'))
       };
     }
     const selectionStart = Number.isInteger(field.selectionStart) ? field.selectionStart : 0;
@@ -419,13 +537,13 @@
     })[reason] || "没有识别到可用的关键词";
   }
 
-  function currentSitePattern(pageUrl = location.href) {
+  function currentSitePattern(pageUrl = currentUrl()) {
     try {
       const url = new URL(pageUrl);
       if (url.protocol === "http:" || url.protocol === "https:") return `${url.origin}/*`;
       return "file:///*";
     } catch {
-      return location.href;
+      return currentUrl();
     }
   }
 
@@ -446,7 +564,7 @@
     if (!bootstrap) await loadBootstrap();
     const validation = PageCueQuickCreatePolicy.validateSelection(message.selectionText, {
       editable: message.editable === true,
-      input: message.editable ? quickMemoInputContext() : null
+      input: message.editable ? quickMemoInputContext(message.pageUrl) : null
     });
     if (!validation.ok) {
       showQuickMemoNotice(quickMemoPolicyMessage(validation.reason), "warning");
@@ -621,6 +739,16 @@
   }
 
   function centerHighlightInViewport(active) {
+    const richSource = richHighlightSources.get(active);
+    if (richSource) {
+      const sourceElement = richSource.range.startContainer.parentElement;
+      sourceElement?.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+      requestAnimationFrame(() => {
+        positionRichHighlights();
+        requestAnimationFrame(positionRichHighlights);
+      });
+      return;
+    }
     for (const container of scrollableAncestors(active)) {
       const targetRect = active.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
@@ -984,8 +1112,8 @@
     lastStrategyTestCheckAt = now;
     const pending = await send({ type: "GET_PENDING_STRATEGY_TESTS" });
     for (const test of pending?.tests || []) {
-      if (!sameTestPage(location.href, test.request?.url)) continue;
-      if (!ContextRuleEngine.matchesSite(location.href, test.sitePatterns || [])) continue;
+      if (!sameTestPage(currentUrl(), test.request?.url)) continue;
+      if (!ContextRuleEngine.matchesSite(currentUrl(), test.sitePatterns || [])) continue;
       const rule = {
         pageScope: "page_groups",
         pageStrategies: [{ pageGroupId: test.pageGroupId, sitePatterns: test.sitePatterns || [], ...test.strategy }],
@@ -998,7 +1126,7 @@
       };
       const collected = collectMatchUnits(rule);
       if (collected.selectorValid && !collected.units.length && now - Date.parse(test.request.requestedAt || 0) < 8_000) continue;
-      const evaluated = ContextRuleEngine.evaluateRuleUnits(rule, collected.units, { url: location.href });
+      const evaluated = ContextRuleEngine.evaluateRuleUnits(rule, collected.units, { url: currentUrl() });
       const bestUnit = collected.units.reduce((best, unit) => {
         const count = rule.includeTerms.filter(term => ContextRuleEngine.testTerm(unit.text, term, false, false)).length;
         return !best || count > best.count ? { unit, count } : best;
@@ -1011,7 +1139,7 @@
         type: "REPORT_STRATEGY_TEST",
         requestId: test.request.id,
         result: {
-          url: location.href,
+          url: currentUrl(),
           matchScope: collected.strategy.matchScope,
           selectorValid: collected.selectorValid,
           unitCount: collected.units.length,
@@ -1201,15 +1329,19 @@
 
   const observer = new MutationObserver(mutations => {
     if (highlighting) return;
-    if (mutations.every(item => [...item.addedNodes].every(node => node.nodeType === 1 && (node.classList?.contains("cc-toast") || node.classList?.contains("cc-findbar") || node.classList?.contains("cc-annotation-pin") || node.classList?.contains("cc-annotation-popover") || node.classList?.contains("cc-picker-toolbar") || node.classList?.contains("cc-quick-memo-dialog") || node.classList?.contains("cc-quick-memo-notice"))))) return;
+    if (mutations.every(item => [...item.addedNodes].every(node => node.nodeType === 1 && (node.classList?.contains("cc-toast") || node.classList?.contains("cc-findbar") || node.classList?.contains("cc-annotation-pin") || node.classList?.contains("cc-annotation-popover") || node.classList?.contains("cc-picker-toolbar") || node.classList?.contains("cc-quick-memo-dialog") || node.classList?.contains("cc-quick-memo-notice") || node.classList?.contains("cc-rich-highlight"))))) return;
     externalDomChanged = true;
     scheduleScan();
   });
   if (document.body) observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   document.addEventListener("input", event => { if (isScannableField(event.target)) scheduleScan(120); }, true);
   document.addEventListener("change", event => { if (isScannableField(event.target)) scheduleScan(120); }, true);
-  window.addEventListener("scroll", positionElementPins, { passive: true });
+  window.addEventListener("scroll", () => {
+    positionElementPins();
+    positionRichHighlights();
+  }, { passive: true, capture: true });
   window.addEventListener("resize", positionElementPins, { passive: true });
+  window.addEventListener("resize", positionRichHighlights, { passive: true });
   window.addEventListener("popstate", () => { send({ type: "PAGE_OPENED" }); scheduleScan(100); });
   window.addEventListener("hashchange", () => { send({ type: "PAGE_OPENED" }); scheduleScan(100); });
   for (const method of ["pushState", "replaceState"]) {

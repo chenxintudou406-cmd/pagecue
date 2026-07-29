@@ -1,6 +1,6 @@
 {
   "name": "pagecue",
-  "version": "3.2.9",
+  "version": "3.2.10",
   "private": true,
   "description": "Context-aware notes, team reminders, and quick tools for Chrome and Edge.",
   "scripts": {
