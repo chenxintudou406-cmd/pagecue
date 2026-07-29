@@ -36,17 +36,32 @@ test("提醒卡片使用单一队列并记录展开、链接、评论、完成�
   assert.match(server, /operation_completed/);
 });
 
-test("赞踩状态在所有提醒卡片中互斥选中并在重新打开后恢复", () => {
+test("赞踩状态只在当前展示周期互斥选中，重新打开提醒时清空", () => {
   const content = read("extension/content/content.js");
   const sidepanel = read("extension/sidepanel/app.js");
   const styles = read("extension/sidepanel/styles.css") + read("extension/content/content.css");
   const worker = read("extension/background/service-worker.js");
-  assert.match(content, /memo\.myFeedback/);
-  assert.match(sidepanel, /memo\.myFeedback/);
   assert.match(content + sidepanel, /aria-pressed/);
-  assert.match(worker, /memo\.myFeedback\s*=\s*action/);
+  assert.doesNotMatch(content, /memo\.myFeedback|rememberFeedback/);
+  assert.doesNotMatch(sidepanel, /memo\.myFeedback/);
+  assert.doesNotMatch(worker, /rememberMemoFeedback|memo\.myFeedback\s*=\s*action/);
   assert.match(styles, /feedback_up.*selected|selected.*feedback_up/s);
   assert.match(styles, /feedback_down.*selected|selected.*feedback_down/s);
+});
+
+test("长提醒保留完整正文和后台换行，并可在安全高度内展开收起", () => {
+  const content = read("extension/content/content.js");
+  const styles = read("extension/content/content.css");
+  assert.doesNotMatch(content, /memo\.body[^;\n]*slice\(0,\s*130\)/);
+  assert.match(content, /data-cc-card-body/);
+  assert.match(content, /data-cc-body-toggle/);
+  assert.match(content, /aria-expanded/);
+  assert.match(content, /prepareExpandableBodies/);
+  assert.match(content, /positionAnnotationPopover/);
+  assert.match(styles, /\.cc-card-body[^}]*white-space:\s*pre-wrap/s);
+  assert.match(styles, /\.cc-card-body\.is-expanded[^}]*overflow:\s*auto/s);
+  assert.match(styles, /\.cc-body-toggle/);
+  assert.match(styles, /max-height:\s*calc\(100vh - 24px\)/);
 });
 
 test("用户设置按打开方式、账号权限、页面行为和连接版本清晰分区", () => {

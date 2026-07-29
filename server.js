@@ -1710,13 +1710,9 @@ async function handleApi(req, res, url) {
     const acknowledgedBroadcastKeys = new Set(db.broadcastReceipts
       .filter(item => item.memberId === user.id)
       .map(item => `${item.memoId}:${item.memoVersion}`));
-    const feedbackByMemoVersion = new Map(db.memberFeedback
-      .filter(item => item.memberId === user.id)
-      .map(item => [`${item.memoId}:${item.memoVersion}`, item.action]));
     const memberMemo = item => ({
       ...resolveMemoPageGroups(item, db.pageGroups),
-      commentCount: db.memoComments.filter(comment => comment.memoId === item.id).length,
-      myFeedback: feedbackByMemoVersion.get(`${item.id}:${Number(item.version || 1)}`) || null
+      commentCount: db.memoComments.filter(comment => comment.memoId === item.id).length
     });
     return send(res, 200, {
       version: db.meta.version,

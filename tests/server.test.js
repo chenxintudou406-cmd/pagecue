@@ -603,7 +603,7 @@ test("V3 邀请绑定、操作确认、个人提醒与闹钟退休策略可持�
   assert.equal(feedbackDownResponse.status, 201);
   assert.equal((await feedbackDownResponse.json()).feedback.action, "feedback_down");
   const feedbackBootstrap = await (await memberFetch("/api/bootstrap")).json();
-  assert.equal(feedbackBootstrap.memos.find(item => item.id === secondMemo.id).myFeedback, "feedback_down");
+  assert.equal(feedbackBootstrap.memos.find(item => item.id === secondMemo.id).myFeedback, undefined);
   const operationResponse = await adminFetch("/api/admin/memos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
     type: "operation",
     title: "每日确认询单",

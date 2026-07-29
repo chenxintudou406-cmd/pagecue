@@ -112,7 +112,12 @@ main { padding: 12px; }
 .match-proof b { padding: 2px 5px; border-radius: 4px; background: var(--lime); font-size: 8px; }
 .match-proof span { min-width: 0; overflow: hidden; font-size: 9px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .alert-card h3 { margin: 0 0 5px; font-size: 13px; }
-.alert-copy { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.alert-copy { display:-webkit-box; overflow:hidden; overflow-wrap:anywhere; white-space:normal; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.alert-copy.expanded { display:block; max-height:min(280px,38vh); padding-right:4px; overflow:auto; white-space:normal; scrollbar-width:thin; -webkit-line-clamp:unset; }
+.alert-expand { min-height:30px; margin:3px 0 0; padding:0; border:0; background:transparent; color:var(--teal); font-size:9px; font-weight:800; cursor:pointer; }
+.alert-expand[hidden] { display:none; }
+.alert-expand:hover { text-decoration:underline; }
+.alert-expand:focus-visible { outline:2px solid var(--teal); outline-offset:2px; border-radius:4px; }
 .alert-actions { margin-top: 6px; display: flex; justify-content:flex-end; gap: 5px; }
 .alert-actions button { padding: 5px 8px; border: 0; border-radius: 6px; background: #e9eeea; color: #4c5a5d; font-size: 9px; font-weight: 700; }
 .alert-card.level-medium .confirm { background:#c89300; color:#fff; }.alert-card.level-heavy .confirm { background:#de4141; color:#fff; }

@@ -490,17 +490,6 @@ async function postEvent(payload) {
   }
 }
 
-async function rememberMemoFeedback(memoId, action) {
-  const cached = await chrome.storage.local.get("bootstrap");
-  const bootstrap = cached.bootstrap;
-  if (!bootstrap) return;
-  for (const listName of ["memos", "pendingBroadcasts"]) {
-    const memo = (bootstrap[listName] || []).find(item => item.id === memoId);
-    if (memo) memo.myFeedback = action;
-  }
-  await chrome.storage.local.set({ bootstrap });
-}
-
 async function addActiveMatch(tabId, memo, domain, pageInstanceId = "", frameId = 0) {
   const { activeMatches = {} } = await chrome.storage.local.get("activeMatches");
   const list = activeMatches[String(tabId)] || [];
@@ -775,7 +764,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case "TRACK_EVENT": {
         const result = await postEvent(eventPayload(message.memoId, message.domain || senderDomain(sender), message.action, message.presentation, message.anchorId));
-        if (message.action === "feedback_up" || message.action === "feedback_down") await rememberMemoFeedback(message.memoId, message.action);
         return sendResponse({ ok: true, queued: Boolean(result?.queued), feedback: result?.feedback || null });
       }
       default: return sendResponse({ error: "unknown_message" });
