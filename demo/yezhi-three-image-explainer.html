@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>页知｜三张图说明</title>
+  <style>
+    :root {
+      --ink: #102a3a;
+      --muted: #536b7a;
+      --quiet: #78909c;
+      --line: rgba(255,255,255,.68);
+      --glass: rgba(255,255,255,.62);
+      --glass-strong: rgba(255,255,255,.78);
+      --blue: #1677b8;
+      --blue-soft: #dcefff;
+      --yellow: #e0a314;
+      --yellow-soft: #fff2bf;
+      --red: #c7473f;
+      --red-soft: #ffe0dc;
+      --green: #139b83;
+      --shadow: 0 26px 70px rgba(23, 57, 78, .16);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(228, 241, 246, .76), rgba(242, 247, 246, .88)),
+        url("../extension/assets/lake-muted.webp") center/cover fixed no-repeat;
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+    .deck {
+      display: grid;
+      gap: 28px;
+      padding: 28px;
+    }
+    body.capture .deck {
+      display: block;
+      padding: 0;
+    }
+    body.capture .slide {
+      display: none;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    body.capture .slide.active {
+      display: block;
+    }
+    .slide {
+      position: relative;
+      overflow: hidden;
+      width: 1600px;
+      height: 900px;
+      margin: 0 auto;
+      padding: 54px 64px;
+      border: 1px solid var(--line);
+      border-radius: 34px;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(255,255,255,.66), transparent 28%),
+        radial-gradient(circle at 86% 12%, rgba(130, 206, 225, .22), transparent 34%),
+        rgba(255,255,255,.34);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.72);
+      -webkit-backdrop-filter: blur(18px) saturate(132%);
+      backdrop-filter: blur(18px) saturate(132%);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      color: var(--muted);
+      font-size: 21px;
+      font-weight: 800;
+    }
+    .brand img {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      box-shadow: 0 10px 24px rgba(22,119,184,.18);
+    }
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 32px;
+      padding: 10px 16px;
+      border: 1px solid rgba(255,255,255,.76);
+      border-radius: 999px;
+      color: var(--green);
+      background: rgba(255,255,255,.54);
+      font-size: 20px;
+      font-weight: 900;
+    }
+    h1 {
+      margin: 22px 0 0;
+      font-size: 70px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+    .lead {
+      width: 690px;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: 31px;
+      line-height: 1.55;
+      font-weight: 650;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 700px 1fr;
+      gap: 52px;
+      align-items: center;
+      height: 690px;
+    }
+    .glass {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--glass);
+      box-shadow: 0 22px 54px rgba(20,60,80,.14), inset 0 1px 0 rgba(255,255,255,.82);
+      -webkit-backdrop-filter: blur(22px) saturate(142%);
+      backdrop-filter: blur(22px) saturate(142%);
+    }
+    .source-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 22px;
+    }
+    .source {
+      display: grid;
+      grid-template-columns: 74px 1fr;
+      gap: 18px;
+      align-items: center;
+      padding: 24px;
+    }
+    .source-icon {
+      display: grid;
+      place-items: center;
+      width: 74px;
+      height: 74px;
+      border-radius: 22px;
+      color: #fff;
+      background: linear-gradient(135deg, var(--blue), #40b5d7);
+      font-size: 34px;
+      font-weight: 900;
+    }
+    .source:nth-child(2) .source-icon { background: linear-gradient(135deg, var(--green), #53c2a9); }
+    .source:nth-child(3) .source-icon { background: linear-gradient(135deg, var(--yellow), #f1c55e); color: #3d2c00; }
+    .source strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 28px;
+    }
+    .source span {
+      color: var(--muted);
+      font-size: 21px;
+      line-height: 1.5;
+    }
+    .work-scene {
+      position: relative;
+      min-height: 530px;
+      padding: 34px;
+    }
+    .source-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .mini-source {
+      padding: 15px 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.72);
+      border: 1px solid rgba(110,145,160,.16);
+      color: #466170;
+      font-size: 18px;
+      font-weight: 900;
+      text-align: center;
+    }
+    .browser-top {
+      display: flex;
+      gap: 10px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid rgba(90,125,145,.16);
+    }
+    .dot { width: 16px; height: 16px; border-radius: 50%; background: #b8cbd4; }
+    .fake-page {
+      margin-top: 30px;
+      display: grid;
+      gap: 18px;
+    }
+    .bar {
+      height: 28px;
+      border-radius: 999px;
+      background: rgba(180,201,210,.45);
+    }
+    .bar.short { width: 62%; }
+    .bar.mid { width: 82%; }
+    .table {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr .9fr;
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .cell {
+      height: 58px;
+      border-radius: 13px;
+      background: rgba(255,255,255,.72);
+      border: 1px solid rgba(110,145,160,.18);
+    }
+    .thinking {
+      position: absolute;
+      right: 26px;
+      bottom: 34px;
+      width: 410px;
+      padding: 28px 30px;
+      border: 2px solid rgba(199,71,63,.26);
+      border-radius: 28px;
+      background: rgba(255,255,255,.84);
+      color: #294250;
+      font-size: 30px;
+      font-weight: 900;
+      line-height: 1.38;
+      box-shadow: 0 22px 56px rgba(199,71,63,.12);
+    }
+    .pain-tag {
+      position: absolute;
+      left: 38px;
+      bottom: 34px;
+      color: var(--red);
+      font-size: 22px;
+      font-weight: 900;
+    }
+    .page-demo {
+      position: relative;
+      min-height: 570px;
+      padding: 34px;
+    }
+    .page-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(90,125,145,.16);
+      font-size: 22px;
+      font-weight: 900;
+    }
+    .search {
+      width: 420px;
+      padding: 18px 22px;
+      border: 2px solid rgba(22,119,184,.34);
+      border-radius: 18px;
+      color: var(--muted);
+      background: rgba(255,255,255,.78);
+      font-size: 21px;
+    }
+    .product-row {
+      margin-top: 28px;
+      padding: 24px;
+      border-radius: 22px;
+      background: rgba(255,255,255,.62);
+      border: 1px solid rgba(110,145,160,.18);
+    }
+    .product-title {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      font-size: 34px;
+      font-weight: 950;
+    }
+    .highlight {
+      padding: 2px 7px 4px;
+      border-bottom: 5px solid var(--yellow);
+      border-radius: 8px;
+      background: var(--yellow-soft);
+      color: #17425a;
+    }
+    .fields {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 26px;
+    }
+    .field {
+      min-height: 88px;
+      padding: 15px;
+      border-radius: 16px;
+      background: rgba(244,249,250,.9);
+      border: 1px solid rgba(110,145,160,.16);
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1.5;
+    }
+    .field b { display: block; color: var(--ink); font-size: 23px; }
+    .cue-card {
+      position: absolute;
+      right: 48px;
+      bottom: 50px;
+      width: 520px;
+      overflow: hidden;
+    }
+    .cue-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 22px 26px;
+      background: rgba(224,163,20,.72);
+      font-size: 24px;
+      font-weight: 950;
+    }
+    .cue-head .pill {
+      padding: 8px 13px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.42);
+      font-size: 18px;
+    }
+    .cue-body {
+      padding: 26px;
+      background: rgba(255,255,255,.78);
+    }
+    .cue-body h2 {
+      margin: 0 0 14px;
+      font-size: 31px;
+      line-height: 1.3;
+    }
+    .cue-body p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 22px;
+      line-height: 1.58;
+      font-weight: 650;
+    }
+    .cue-foot {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      padding: 0 26px 25px;
+      background: rgba(255,255,255,.78);
+    }
+    .btn {
+      min-width: 116px;
+      padding: 14px 20px;
+      border: 1px solid rgba(84,119,139,.22);
+      border-radius: 999px;
+      color: #31546a;
+      background: rgba(255,255,255,.72);
+      font-size: 20px;
+      font-weight: 900;
+      text-align: center;
+    }
+    .btn.primary {
+      color: #2e2100;
+      border-color: rgba(224,163,20,.45);
+      background: var(--yellow);
+    }
+    .value-list {
+      display: grid;
+      gap: 18px;
+      margin-top: 26px;
+    }
+    .value {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 20px 22px;
+      border-radius: 20px;
+      background: rgba(255,255,255,.62);
+      border: 1px solid rgba(255,255,255,.72);
+      font-size: 24px;
+      font-weight: 900;
+    }
+    .value i {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--blue);
+      font-style: normal;
+      font-size: 21px;
+    }
+    .system-flow {
+      display: grid;
+      grid-template-columns: 1fr 120px 1fr 120px 1fr;
+      align-items: center;
+      gap: 18px;
+      margin-top: 34px;
+    }
+    .flow-card {
+      min-height: 360px;
+      padding: 28px;
+    }
+    .flow-card h2 {
+      margin: 0 0 18px;
+      font-size: 34px;
+    }
+    .flow-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 22px;
+      line-height: 1.55;
+      font-weight: 650;
+    }
+    .chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 26px;
+    }
+    .chip {
+      padding: 11px 15px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.72);
+      color: #31546a;
+      font-size: 19px;
+      font-weight: 850;
+    }
+    .chip.blue { background: var(--blue-soft); color: #075b91; }
+    .chip.yellow { background: var(--yellow-soft); color: #785500; }
+    .chip.red { background: var(--red-soft); color: #9d261f; }
+    .arrow {
+      display: grid;
+      place-items: center;
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      color: #fff;
+      background: linear-gradient(135deg, var(--blue), #40b5d7);
+      font-size: 44px;
+      font-weight: 950;
+      box-shadow: 0 18px 40px rgba(22,119,184,.22);
+    }
+    .action-line {
+      position: absolute;
+      left: 64px;
+      right: 64px;
+      bottom: 30px;
+      padding: 18px 28px;
+      border-radius: 24px;
+      background: rgba(16,42,58,.88);
+      color: #fff;
+      font-size: 26px;
+      font-weight: 950;
+      text-align: center;
+      box-shadow: 0 20px 50px rgba(16,42,58,.18);
+    }
+    .corner-note {
+      position: absolute;
+      top: 62px;
+      right: 64px;
+      color: var(--quiet);
+      font-size: 19px;
+      font-weight: 800;
+    }
+    @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .glass, .slide, .cue-card { background: rgba(255,255,255,.95); }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide" id="slide-1" aria-label="知识太多，真正用时想不起来">
+      <div class="brand"><img src="../extension/assets/pagecue-logo-1024.png" alt="页知">页知 PageCue</div>
+      <span class="kicker">先让普通人觉得：这说的就是我</span>
+      <div class="layout">
+        <div>
+          <h1>知识都在，<br>但人记不住</h1>
+          <p class="lead">团队有很多经验、规则和注意事项，但靠学习、考试、背诵，很难在真正工作时想起来。</p>
+          <div class="value-list">
+            <div class="value"><i>1</i>知识太多，使用频率又低</div>
+            <div class="value"><i>2</i>知识库要主动搜，真用时想不起在哪</div>
+            <div class="value"><i>3</i>飞书、群、会议里的信息不在工作页面里</div>
+          </div>
+        </div>
+        <div class="work-scene glass">
+          <div class="source-strip">
+            <div class="mini-source">飞书文档</div>
+            <div class="mini-source">微信群消息</div>
+            <div class="mini-source">会议口头经验</div>
+          </div>
+          <div class="browser-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <div class="fake-page"><div class="bar mid"></div><div class="bar"></div><div class="bar short"></div><div class="table"><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div></div>
+          <div class="thinking">这个规则以前是不是说过？</div>
+          <div class="pain-tag">问题不在人笨，是知识没有出现在当下。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2" aria-label="用到哪里，提醒就出现在哪里">
+      <div class="brand"><img src="../extension/assets/pagecue-logo-1024.png" alt="页知">页知 PageCue</div>
+      <span class="kicker">让人产生兴趣：不是再学一个系统</span>
+      <div class="layout">
+        <div>
+          <h1>用到哪里，<br>提醒就出现在哪里</h1>
+          <p class="lead">页知通过关键词和页面规则，把团队知识放回真实工作场景。看到相关内容时，提醒自动出现。</p>
+          <div class="value-list">
+            <div class="value"><i>找</i>打通找货页面</div>
+            <div class="value"><i>核</i>打通核查页面</div>
+            <div class="value"><i>后</i>打通公司后台路径</div>
+          </div>
+        </div>
+        <div class="page-demo glass">
+          <div class="page-head"><span>化学品找货平台</span><span class="search">输入产品名或 CAS</span></div>
+          <div class="product-row">
+            <div class="product-title"><span class="highlight">危险品</span><span>氯乙酸</span><span style="color:#78909c;font-size:25px;">CAS 79-11-8</span></div>
+            <div class="fields">
+              <div class="field"><b>供应商</b>101 家</div>
+              <div class="field"><b>报价状态</b>待确认资质</div>
+              <div class="field"><b>客户标签</b>企业版报价</div>
+              <div class="field"><b>用途</b>科研及生产核查</div>
+              <div class="field"><b>订单备注</b>需确认运输条件</div>
+              <div class="field"><b>操作入口</b>获取最新报价</div>
+            </div>
+          </div>
+          <article class="cue-card glass">
+            <header class="cue-head"><span>知识提醒</span><span class="pill">中</span></header>
+            <div class="cue-body">
+              <h2>危险品报价前先核查资质</h2>
+              <p>命中“危险品 / 氯乙酸”。请先确认客户用途、运输要求和合同年限，再继续报价。</p>
+            </div>
+            <footer class="cue-foot"><span class="btn">查看资料</span><span class="btn primary">知道了</span></footer>
+          </article>
+        </div>
+      </div>
+      <div class="corner-note">不用背，不用搜，做到哪里提醒到哪里。</div>
+    </section>
+
+    <section class="slide" id="slide-3" aria-label="公司统一推送，个人也能补充">
+      <div class="brand"><img src="../extension/assets/pagecue-logo-1024.png" alt="页知">页知 PageCue</div>
+      <span class="kicker">让团队相信：能管理，也不增加负担</span>
+      <h1>公司统一推送，个人也能补充</h1>
+      <p class="lead">重要知识由公司统一发布，个人经验也能自己保存。提醒按人群和等级推送，不打扰不相关的人。</p>
+      <div class="system-flow">
+        <article class="flow-card glass">
+          <h2>信息从哪里来</h2>
+          <p>会议、聊天、办公室沟通里的经验，可以通过微信群机器人或后台录入，不再只靠口头传达。</p>
+          <div class="chip-list"><span class="chip">微信群机器人</span><span class="chip">后台录入</span><span class="chip">个人补充</span></div>
+        </article>
+        <div class="arrow">→</div>
+        <article class="flow-card glass">
+          <h2>怎么控制打扰</h2>
+          <p>个人和公司内容分开，销售、客服、采购可按组接收；轻中重分级，让提醒有重点。</p>
+          <div class="chip-list"><span class="chip blue">轻度：看见即可</span><span class="chip yellow">中度：可确认</span><span class="chip red">重度：持续提示</span></div>
+        </article>
+        <div class="arrow">→</div>
+        <article class="flow-card glass">
+          <h2>工作时怎么用</h2>
+          <p>员工打开网页或后台，命中关键词后自动看到提醒；可以评论、反馈、查看链接和供应商卡片。</p>
+          <div class="chip-list"><span class="chip">评论反馈</span><span class="chip">查看链接</span><span class="chip">供应商卡片</span></div>
+        </article>
+      </div>
+      <div class="action-line">先把最容易出错、最常被问、最需要统一执行的 20 条知识放进去测试。</div>
+    </section>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const slide = params.get("slide");
+    if (slide) {
+      document.body.classList.add("capture");
+      document.querySelectorAll(".slide").forEach((node) => {
+        node.classList.toggle("active", node.id === `slide-${slide}`);
+      });
+    }
+  </script>
+</body>
+</html>

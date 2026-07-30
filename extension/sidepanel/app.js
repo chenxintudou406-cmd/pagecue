@@ -1,139 +1,132 @@
-const state = { bootstrap: null, context: null, config: null, tab: "alerts", scope: "all", query: "", editing: null };
-const $ = selector => document.querySelector(selector); const $$ = selector => [...document.querySelectorAll(selector)];
+const state = { bootstrap: { memos: [], tools: [], groups: [], pageGroups: [] }, context: {}, config: {}, capabilities: {}, session: null, tab: "alerts", filter: "all", query: "", editing: null, editingMemo: null, commentsByMemo: {}, openCommentMemoId: null };
+const $ = selector => document.querySelector(selector); const $$ = selector => Array.from(document.querySelectorAll(selector));
 const send = message => chrome.runtime.sendMessage(message);
+function currentEditingId() { const id = state.editing?.id; return id || ""; }
+async function currentDeviceId() { return (await send({ type: "GET_DEVICE_ID" })).deviceId || ""; }
 function escapeHtml(value = "") { return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char])); }
 function markdown(value = "") { return escapeHtml(value).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`(.+?)`/g, "<code>$1</code>").replace(/\n/g, "<br>"); }
-function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2100); }
-function memoMatchesSearch(memo) { const haystack = `${memo.title} ${memo.body} ${(memo.tags || []).join(" ")}`.toLowerCase(); return haystack.includes(state.query.toLowerCase()); }
-function linksHtml(memo) { return memo.links?.length ? `<div class="memo-links">${memo.links.map(link => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noreferrer">${escapeHtml(link.label)} ↗</a>`).join("")}</div>` : ""; }
-function tagsHtml(memo) { return memo.tags?.length ? `<div class="tags">${memo.tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""; }
-function triggerStrip(memo) {
-  const rule = memo.rule || {};
-  const tokens = [
-    ...(rule.includeTerms || []).map(term => `包含：${term}`),
-    ...(rule.excludeTerms || []).map(term => `排除：${term}`),
-    ...(rule.sitePatterns || []).map(pattern => `站点：${pattern}`)
-  ];
-  return `<div class="trigger-strip" title="左右滑动查看完整规则">${(tokens.length ? tokens : ["所有已授权页面"]).map(token => `<span>${escapeHtml(token)}</span>`).join("")}</div>`;
-}
-function inlineMeta(memo, trailing = "") {
-  return `<div class="meta-line"><div class="meta-scroll"><span class="scope">${memo.scope === "personal" ? "我的" : "组织"}</span>${(memo.tags || []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}${memo.scope === "organization" ? `<span class="tag readonly">只读</span>` : ""}</div>${trailing}</div>`;
-}
+function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2300); }
+function localInput(value) { if (!value) return ""; const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
+function parseLinks(value = "") { return String(value).split(/\n/).map(line => { const parts = line.split("|"); const url = (parts.length > 1 ? parts.pop() : parts[0]).trim(); const label = parts.join("|").trim() || url; return { label, url }; }).filter(link => /^https?:\/\//i.test(link.url)).slice(0, 20); }
+function linksText(links = []) { return links.map(link => `${link.label} | ${link.url}`).join("\n"); }
+function validMemoLinks(links = []) { return Array.isArray(links) ? links.filter(link => /^https?:\/\/\S+/i.test(String(link?.url || "").trim())) : []; }
+function linksHtml(item) { const links = validMemoLinks(item.links); if (!links.length) return ""; const row = link => `<span class="memo-link-row"><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" data-open-memo-link="${escapeHtml(item.id)}">查看具体信息 ↗</a><button type="button" data-copy-memo-link="${escapeHtml(link.url)}" data-copy-memo-id="${escapeHtml(item.id)}">复制链接</button></span>`; const first = links.slice(0, 3).map(row).join(""); const more = links.length > 3 ? `<details><summary>更多链接（${links.length - 3}）</summary>${links.slice(3).map(row).join("")}</details>` : ""; return `<div class="memo-links">${first}${more}</div>`; }
+function supplierButton(item) { const ref = (item.entityRefs || []).find(candidate => candidate.type === "supplier"); return ref ? `<button type="button" class="supplier-entry" data-open-supplier="${escapeHtml(ref.id)}">查看供应商</button>` : ""; }
+function commentButton(item) { return `<button type="button" class="comment-entry" data-open-comments="${escapeHtml(item.id)}">评论${item.commentCount ? ` ${item.commentCount}` : ""}</button>`; }
+function feedbackButtons(item, domain = "") { const button = (action, label) => `<button data-feedback="${action}" data-id="${escapeHtml(item.id)}"${domain ? ` data-domain="${escapeHtml(domain)}"` : ""} title="${label}" aria-label="${label}" aria-pressed="false">${label}</button>`; return `<span class="feedback compact-feedback" data-feedback-group="${escapeHtml(item.id)}">${button("feedback_up", "赞")}${button("feedback_down", "踩")}</span>`; }
+function alertBody(item) { const bodyId = `alert-body-${String(item.id || "memo").replace(/[^a-zA-Z0-9_-]/g, "-")}`; return `<div id="${bodyId}" class="memo-body alert-copy" data-alert-body>${markdown(item.body)}</div><button class="alert-expand" type="button" data-alert-expand aria-controls="${bodyId}" aria-expanded="false" hidden>展开全文</button>`; }
+function prepareAlertBodies() { requestAnimationFrame(() => $$("[data-alert-body]").forEach(body => { const button = body.parentElement?.querySelector(`[data-alert-expand][aria-controls="${body.id}"]`); if (button) button.hidden = body.scrollHeight <= body.clientHeight + 1; })); }
+function commentPanel(item) { return `<section class="inline-comments" data-comments-panel="${escapeHtml(item.id)}" hidden></section>`; }
+function typeLabel(item) { return item.type === "operation" ? "操作提醒" : "知识提醒"; }
+function searchMatch(item) { return `${item.title || ""} ${item.body || ""} ${(item.tags || []).join(" ")}`.toLowerCase().includes(state.query.toLowerCase()); }
+function triggerStrip(memo) { const rule = memo.rule || {}; const tokens = [].concat((rule.includeTerms || []).map(term => `包含：${term}`), (rule.excludeTerms || []).map(term => `排除：${term}`), (rule.sitePatterns || []).map(pattern => `页面组：${pattern}`)); return `<div class="trigger-strip">${(tokens.length ? tokens : ["默认网页，本地匹配"]).map(token => `<span>${escapeHtml(token)}</span>`).join("")}</div>`; }
+function intensityLabel(memo) { return ({ light: "轻", standard: "中", medium: "中", strong: "重", heavy: "重" })[memo.annotation?.template || memo.intensity] || "中"; }
+
+async function directApi(path, options = {}) { const stored = await chrome.storage.local.get("memberToken"); const response = await fetch(`${state.config.apiBase}${path}`, { ...options, headers: { "Content-Type": "application/json", ...(stored.memberToken ? { Authorization: `Bearer ${stored.memberToken}` } : {}), ...(options.headers || {}) } }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || "请求失败"); return payload; }
 
 async function load(force = false) {
-  const [bootstrapResult, contextResult, configResult] = await Promise.all([send({ type: force ? "REFRESH_BOOTSTRAP" : "GET_BOOTSTRAP" }), send({ type: "GET_CONTEXT" }), send({ type: "GET_CONFIG" })]);
-  if (bootstrapResult.error) throw new Error(bootstrapResult.error);
-  state.bootstrap = bootstrapResult.bootstrap; state.context = contextResult; state.config = configResult.config;
-  $("#workspace-name").textContent = state.bootstrap.groups.map(item => item.name).join(" · ") || "个人工作区";
-  $("#api-base").value = state.config.apiBase; $("#user-id").value = state.config.userId;
-  const offline = Boolean(bootstrapResult.offline); $("#connection-dot").classList.toggle("error", offline); $("#connection-text").textContent = offline ? "离线缓存模式" : "组织内容已同步";
-  render();
+  const [configResult, sessionResult, contextResult, capabilityResult] = await Promise.all([send({ type: "GET_CONFIG" }), send({ type: "GET_MEMBER_SESSION" }), send({ type: "GET_CONTEXT" }), send({ type: "GET_CAPABILITIES" })]);
+  state.config = configResult.config; state.session = sessionResult; state.context = contextResult; state.capabilities = capabilityResult.capabilities || {}; $("#api-base").value = state.config.apiBase;
+  if (sessionResult.bound) { const result = await send({ type: force ? "REFRESH_BOOTSTRAP" : "GET_BOOTSTRAP" }); if (result.error) throw new Error(result.error); state.bootstrap = result.bootstrap; $("#connection-dot").classList.toggle("error", Boolean(result.offline)); $("#connection-text").textContent = result.offline ? "离线缓存模式" : "组织内容已同步"; }
+  else { $("#connection-dot").classList.add("error"); $("#connection-text").textContent = "请使用邀请码绑定"; }
+  renderUpdateNotice(capabilityResult); render();
+  if (state.context.selectedCommentMemoId) { await openComments(state.context.selectedCommentMemoId); await send({ type: "CLEAR_SELECTED_COMMENT" }); state.context.selectedCommentMemoId = null; }
 }
 
-function render() { renderContext(); renderAlerts(); renderMemos(); renderTools(); renderSites(); }
-function fillPersonalPageGroups(selected = "") {
-  const groups = state.bootstrap?.pageGroups || [];
-  const select = $("#personal-form [name=pageGroupId]");
-  select.innerHTML = groups.length ? groups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("") : `<option value="">暂无页面组</option>`;
-  select.value = selected || groups[0]?.id || "";
-}
-function togglePersonalPageScope() {
-  const form = $("#personal-form");
-  const scoped = form.elements.pageScope.value === "page_groups";
-  $("[data-personal-page-group]").hidden = !scoped;
-  form.elements.pageGroupId.disabled = !scoped;
-}
-function renderContext() {
-  const tab = state.context?.tab;
-  const count = currentAlerts().length;
-  $("#page-context").classList.toggle("has-alerts", count > 0);
-  $("#page-context").innerHTML = tab
-    ? `<div class="signal-number">${count}</div><div class="signal-copy"><strong>${count ? "检测到相关提醒" : "页面检测正常"}</strong><span title="${escapeHtml(tab.url || "")}">${count ? `请查看下方 ${count} 条备忘` : escapeHtml(tab.title || tab.url || "当前页面")}</span></div>`
-    : `<div class="signal-number">0</div><div class="signal-copy"><strong>没有可检测页面</strong><span>请打开普通网页后重试</span></div>`;
+function renderComments(memoId) {
+  const comments = state.commentsByMemo[memoId] || [];
+  const rows = comments.length ? comments.map(comment => `<article class="comment-row"><div class="comment-row-head"><strong>${escapeHtml(comment.userName || "成员")}</strong><time>${new Date(comment.createdAt).toLocaleString("zh-CN", { hour12: false })}</time></div><p>${escapeHtml(comment.content)}</p>${comment.canDelete ? `<button type="button" data-delete-comment="${escapeHtml(comment.id)}" data-comment-memo-id="${escapeHtml(memoId)}">删除我的评论</button>` : ""}</article>`).join("") : `<div class="empty"><b>还没有评论</b>可以直接补充经验或注意事项。</div>`;
+  $$(`[data-comments-panel="${CSS.escape(memoId)}"]`).forEach(panel => { panel.hidden = false; panel.innerHTML = `<div class="inline-comment-list">${rows}</div><form class="inline-comment-form" data-comment-form="${escapeHtml(memoId)}"><textarea name="content" maxlength="2000" rows="2" required placeholder="写下评论…"></textarea><button type="submit">发送</button></form>`; });
 }
 
-function currentAlerts() {
-  const matches = state.context?.matches || [];
-  return matches.map(match => ({ match, memo: state.bootstrap.memos.find(memo => memo.id === match.memoId) })).filter(item => item.memo && !["ignored", "confirmed", "snoozed"].includes(item.match.state) && memoMatchesSearch(item.memo));
+async function openComments(memoId) {
+  const memo = (state.bootstrap.memos || []).find(item => item.id === memoId);
+  if (!memo) return toast("当前账号无法查看这条提醒");
+  const panels = $$(`[data-comments-panel="${CSS.escape(memoId)}"]`);
+  if (state.openCommentMemoId === memoId && panels.some(panel => !panel.hidden)) { panels.forEach(panel => { panel.hidden = true; }); state.openCommentMemoId = null; return; }
+  state.openCommentMemoId = memoId;
+  await send({ type: "TRACK_EVENT", memoId, domain: state.context.tab?.url || "", action: "comment_opened", presentation: "sidepanel" });
+  panels.forEach(panel => { panel.hidden = false; panel.innerHTML = `<div class="empty">正在加载评论…</div>`; });
+  try { const result = await directApi(`/api/memos/${encodeURIComponent(memoId)}/comments`); state.commentsByMemo[memoId] = result.comments || []; renderComments(memoId); } catch (error) { panels.forEach(panel => { panel.innerHTML = `<div class="empty"><b>评论加载失败</b>${escapeHtml(error.message)}</div>`; }); }
 }
 
-function renderAlerts() {
-  const alerts = currentAlerts(); $("#alert-count").textContent = alerts.length;
-  $("#alert-list").innerHTML = alerts.length ? alerts.map(({ memo, match }) => `<article class="alert-card ${memo.priority === "important" ? "important" : ""}"><div class="alert-heading"><span class="scope">${memo.scope === "personal" ? "我的提醒" : "组织提醒"}</span><strong>${memo.priority === "important" ? "重要" : "已触发"}</strong></div><div class="match-proof"><b>命中</b><span>${escapeHtml(memo.rule?.includeTerms?.join("、") || "页面规则")}</span></div><h3>${escapeHtml(memo.title)}</h3><div class="memo-body alert-copy">${markdown(memo.body)}</div>${linksHtml(memo)}<div class="alert-actions"><button class="locate" data-locate-match="${memo.id}">定位关键词</button><button data-alert-action="snoozed" data-id="${memo.id}" data-domain="${escapeHtml(match.domain)}">稍后提醒</button><button class="confirm" data-alert-action="confirmed" data-id="${memo.id}" data-domain="${escapeHtml(match.domain)}">我知道了</button></div><div class="feedback"><button data-feedback="helpful" data-id="${memo.id}" data-domain="${escapeHtml(match.domain)}">有帮助</button><button data-feedback="unhelpful" data-id="${memo.id}" data-domain="${escapeHtml(match.domain)}">不相关</button></div></article>`).join("") : `<div class="empty"><b>当前没有提醒</b>命中规则后，这里会明确显示触发关键词和对应备忘。</div>`;
-}
-
-function renderMemos() {
-  const memos = state.bootstrap.memos.filter(memo => (state.scope === "all" || memo.scope === state.scope) && memoMatchesSearch(memo)).sort((a,b) => (a.scope === "personal" ? -1 : 1) - (b.scope === "personal" ? -1 : 1));
-  $("#memo-list").innerHTML = memos.length ? memos.map(memo => {
-    const actions = memo.scope === "personal" ? `<div class="card-menu"><button class="mini-button" data-edit-personal="${memo.id}">编辑</button><button class="mini-button" data-delete-personal="${memo.id}">删除</button></div>` : "";
-    const ruleLabel = `${memo.rule?.operator || "AND"} ${(memo.rule?.includeTerms || []).length} 条`;
-    return `<article class="memo-card compact ${memo.priority === "important" ? "important" : ""}">${inlineMeta(memo, actions)}<div class="title-rule-line"><h3 title="${escapeHtml(memo.title)}">${escapeHtml(memo.title)}</h3><span>${escapeHtml(ruleLabel)}</span></div>${triggerStrip(memo)}<details class="compact-detail"><summary>查看内容</summary><div class="memo-body">${markdown(memo.body)}</div>${linksHtml(memo)}</details></article>`;
-  }).join("") : `<div class="empty"><b>没有找到备忘</b>可以新建个人备忘，或调整搜索条件。</div>`;
-}
-
-function renderTools() {
-  const tools = state.bootstrap.tools.filter(tool => `${tool.title} ${tool.description} ${tool.category}`.toLowerCase().includes(state.query.toLowerCase()));
-  const groups = tools.reduce((result, item) => { const key = item.category || "常用"; (result[key] ||= []).push(item); return result; }, {});
-  $("#tool-list").innerHTML = tools.length ? Object.entries(groups).map(([category, items]) => `<section class="tool-category"><h3>${escapeHtml(category.toUpperCase())}</h3>${items.map(tool => `<article class="tool-item"><span class="tool-icon">${escapeHtml(tool.icon || "↗")}</span><div><strong>${escapeHtml(tool.title)}</strong><small>${escapeHtml(tool.description || tool.url)}</small></div><div class="tool-actions"><button data-copy="${escapeHtml(tool.url)}" title="复制链接">⧉</button><a href="${escapeHtml(tool.url)}" target="_blank" rel="noreferrer" title="打开">↗</a></div></article>`).join("")}</section>`).join("") : `<div class="empty"><b>没有找到工具</b>组织管理员可在管理台统一发布工作资源。</div>`;
-}
-
-function renderSites() { const patterns = state.config?.sitePatterns || []; $("#site-list").innerHTML = patterns.length ? patterns.map(pattern => `<div class="site-item"><span title="${escapeHtml(pattern)}">${escapeHtml(pattern)}</span><button data-remove-site="${escapeHtml(pattern)}">移除</button></div>`).join("") : `<div class="empty">尚未授权任何站点</div>`; }
+function renderUpdateNotice(result = {}) { const pending = result.pendingVersion; const notice = $("#update-notice"); if (!pending || pending === result.currentVersion) { notice.hidden = true; return; } const href = result.versionInfo?.downloads?.sogouUrl || result.versionInfo?.downloadUrl || ""; $("#update-version").textContent = pending; $("#update-download").href = href ? new URL(href, state.config.apiBase).href : state.config.apiBase; notice.hidden = false; }
+function render() { renderIdentity(); renderUiMode(); renderContext(); renderAlerts(); renderMemos(); renderTools(); renderSites(); }
+function renderQuickUiMode(resolved, sidePanelAvailable) { const button = $("#quick-ui-mode"); button.textContent = resolved === "sidepanel" ? "侧栏" : "悬挂"; button.dataset.nextMode = resolved === "sidepanel" ? "popup" : "sidepanel"; button.disabled = !sidePanelAvailable; button.title = sidePanelAvailable ? `当前：${resolved === "sidepanel" ? "侧边栏" : "悬挂窗口"}，点击切换` : "当前浏览器或安装包不支持侧边栏，与邀请码无关"; }
+function renderUiMode() { const requested = state.config.uiMode || "auto"; const sidePanelAvailable = Boolean(state.capabilities.sidePanel); const resolved = requested === "popup" || !sidePanelAvailable ? "popup" : "sidepanel"; $("#ui-mode").value = requested; $("#ui-mode").querySelector('[value="sidepanel"]').disabled = !sidePanelAvailable; $("#ui-mode-status").textContent = sidePanelAvailable ? `当前将使用：${resolved === "sidepanel" ? "侧边栏" : "悬挂窗口"}。邀请码绑定不影响此设置。` : "当前浏览器或安装包不支持侧边栏，已使用悬挂窗口；这与邀请码无关。"; renderQuickUiMode(resolved, sidePanelAvailable); }
+async function changeUiMode(uiMode) { const result = await send({ type: "SET_UI_MODE", uiMode }); state.config = result.config; renderUiMode(); const message = result.uiMode.resolved === "sidepanel" ? "已切换为侧边栏，下次点击图标生效" : result.uiMode.sidePanelAvailable ? "已切换为悬挂窗口，下次点击图标生效" : "当前浏览器或安装包不支持侧边栏，已使用悬挂窗口"; toast(message); }
+function renderIdentity() { const el = $("#identity-card"); if (!state.session?.bound) { el.innerHTML = `<strong>尚未绑定成员账号</strong><p>绑定后才能接收所在分组的提醒，并安全同步个人内容。</p>`; $("#bind-box").hidden = false; return; } const user = state.session.user || state.session; el.innerHTML = `<div><span class="identity-status">已绑定</span><strong>${escapeHtml(user.name || user.id || "成员")}</strong><p>${escapeHtml((user.groupNames || user.groups || []).join?.(" · ") || "已关联成员权限")}</p></div><button data-unbind>解除绑定</button>`; $("#bind-box").hidden = true; }
+function currentAlerts() { const receipts = new Set((state.bootstrap.operationReceipts || []).map(item => item.memoId)); return (state.context.matches || []).map(match => ({ match, memo: state.bootstrap.memos.find(memo => memo.id === match.memoId) })).filter(item => { if (!item.memo) return false; const persistentStrong = item.memo.annotation?.template === "strong" && item.memo.type !== "operation"; const visibleState = persistentStrong || !["ignored", "confirmed", "snoozed"].includes(item.match.state); return visibleState && !(item.memo.type === "operation" && item.memo.annotation?.template !== "strong" && receipts.has(item.memo.id)) && searchMatch(item.memo); }); }
+function renderContext() { const tab = state.context.tab; const count = currentAlerts().length; $("#page-context").classList.toggle("has-alerts", count > 0); $("#page-context").innerHTML = tab ? `<div class="signal-number">${count}</div><div class="signal-copy"><strong>${count ? "检测到相关提醒" : "页面检测正常"}</strong><span>${count ? `请处理下方 ${count} 条提醒` : escapeHtml(tab.title || tab.url || "当前页面")}</span></div>` : `<div class="signal-number">0</div><div class="signal-copy"><strong>没有可检测页面</strong><span>请打开普通网页后重试</span></div>`; }
+function renderAlerts() { const alerts = currentAlerts(); $("#alert-count").textContent = alerts.length; $("#alert-list").innerHTML = alerts.length ? alerts.map(({ memo, match }) => { const operation = memo.type === "operation"; return `<article class="alert-card ${operation ? "operation" : "knowledge"} level-${intensityLabel(memo) === "轻" ? "light" : intensityLabel(memo) === "重" ? "heavy" : "medium"}"><div class="alert-heading"><span class="scope">${intensityLabel(memo)} · ${typeLabel(memo)}</span><strong>${operation ? `提醒：${escapeHtml(state.bootstrap.user?.name || "我")}` : memo.scope === "personal" ? "我的" : "组织"}</strong></div><div class="match-proof"><b>命中</b><span>${escapeHtml(memo.rule?.includeTerms?.join("、") || "页面规则")}</span></div><h3>${escapeHtml(memo.title)}</h3>${alertBody(memo)}${operation ? `<p class="operation-window">有效期：${new Date(memo.startsAt).toLocaleDateString()}—${new Date(memo.expiresAt).toLocaleDateString()}</p>` : ""}${linksHtml(memo)}${supplierButton(memo)}<div class="alert-actions">${commentButton(memo)}${feedbackButtons(memo, match.domain)}${memo.triggerMode === "broadcast" ? "" : `<button class="locate" data-locate-match="${memo.id}">定位</button>`}<button class="confirm" data-alert-action="confirmed" data-id="${memo.id}" data-domain="${escapeHtml(match.domain)}">${operation ? "完成了" : "知道了"}</button></div>${commentPanel(memo)}</article>`; }).join("") : `<div class="empty"><b>${state.session?.bound ? "当前没有提醒" : "请先绑定成员账号"}</b>知识和操作规则命中后会显示在这里。</div>`; prepareAlertBodies(); }
+function renderMemos() { const memos = (state.bootstrap.memos || []).filter(memo => (state.filter === "all" || memo.type === state.filter || memo.scope === state.filter) && searchMatch(memo)).sort((a, b) => (a.type === "operation" ? -1 : 1) - (b.type === "operation" ? -1 : 1)); $("#memo-list").innerHTML = memos.length ? memos.map(memo => { const operation = memo.type === "operation"; const actions = memo.scope === "personal" ? `<div class="card-menu"><button class="mini-button" data-edit-personal="${memo.id}">编辑</button><button class="mini-button" data-delete-personal="${memo.id}">删除</button></div>` : ""; return `<article class="memo-card compact ${operation ? "operation" : "knowledge"}"><div class="meta-line"><div class="meta-scroll"><span class="scope">${typeLabel(memo)}</span><span class="tag">${memo.scope === "personal" ? "我的" : "组织"}</span>${(memo.tags || []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>${actions}</div><div class="title-rule-line"><h3>${escapeHtml(memo.title)}</h3><span>${memo.rule?.operator || "AND"} ${(memo.rule?.includeTerms || []).length} 条</span></div>${triggerStrip(memo)}<details class="compact-detail" data-memo-details="${escapeHtml(memo.id)}"><summary>查看内容</summary><div class="memo-body">${markdown(memo.body)}</div>${operation ? `<p class="operation-window">${new Date(memo.startsAt).toLocaleString()}—${new Date(memo.expiresAt).toLocaleString()}</p>` : ""}${linksHtml(memo)}${supplierButton(memo)}</details><div class="memo-inline-actions">${commentButton(memo)}${feedbackButtons(memo)}</div>${commentPanel(memo)}</article>`; }).join("") : `<div class="empty"><b>没有找到提醒</b>可新建个人知识或操作提醒。</div>`; }
+function renderTools() { const tools = (state.bootstrap.tools || []).filter(tool => `${tool.title} ${tool.description} ${tool.category}`.toLowerCase().includes(state.query.toLowerCase())); const groups = tools.reduce((result, item) => { const key = item.category || "常用"; (result[key] ||= []).push(item); return result; }, {}); $("#tool-list").innerHTML = tools.length ? Object.entries(groups).map(([category, items]) => `<section class="tool-category"><h3>${escapeHtml(category)}</h3>${items.map(tool => `<article class="tool-item"><span class="tool-icon">${escapeHtml(tool.icon || "↗")}</span><div><strong>${escapeHtml(tool.title)}</strong><small>${escapeHtml(tool.description || tool.url)}</small></div><div class="tool-actions"><button data-copy="${escapeHtml(tool.url)}">⧉</button><a href="${escapeHtml(tool.url)}" target="_blank" rel="noreferrer">↗</a></div></article>`).join("")}</section>`).join("") : `<div class="empty"><b>没有找到工具</b></div>`; }
+function renderSites() { const personal = state.config.excludedSitePatterns || []; const managed = state.config.managedExcludedSitePatterns || state.bootstrap.settings?.excludedSitePatterns || []; const items = [...managed.map(pattern => ({ pattern, managed: true })), ...personal.filter(pattern => !managed.includes(pattern)).map(pattern => ({ pattern, managed: false }))]; $("#site-list").innerHTML = items.length ? items.map(item => `<div class="site-item"><span>${escapeHtml(item.pattern)}<small>${item.managed ? "组织不提醒" : "个人不提醒"}</small></span>${item.managed ? `<b>组织</b>` : `<button data-remove-site="${escapeHtml(item.pattern)}">移除</button>`}</div>`).join("") : `<div class="empty">当前没有不提醒页面；页知会在默认网页中本地匹配。</div>`; }
 function switchTab(tab) { state.tab = tab; $$("nav button").forEach(el => el.classList.toggle("active", el.dataset.tab === tab)); $$(".tab").forEach(el => el.classList.toggle("active", el.id === `tab-${tab}`)); }
+function toggleMemoFields() { const form = $("#personal-form"); const operation = form.elements.type.value === "operation"; $("[data-operation-dates]").hidden = !operation; form.elements.startsAt.required = operation; form.elements.expiresAt.required = operation; const scoped = form.elements.pageScope.value === "page_groups"; $("[data-personal-page-group]").hidden = !scoped; form.elements.pageGroupId.disabled = !scoped; }
+function fillPageGroups(selected = "") { const select = $("#personal-form [name=pageGroupId]"); select.innerHTML = (state.bootstrap.pageGroups || []).map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join("") || `<option value="">暂无页面组</option>`; select.value = selected || select.options[0]?.value || ""; }
+function openPersonal(id = null) { const form = $("#personal-form"); form.reset(); form.elements.id.value = ""; state.editingMemo = id ? state.bootstrap.memos.find(item => item.id === id) : null; $("#personal-title").textContent = id ? "编辑个人提醒" : "新建个人提醒"; fillPageGroups(state.editingMemo?.rule?.pageGroupIds?.[0]); if (state.editingMemo) { const item = state.editingMemo; form.elements.id.value = item.id; form.elements.type.value = item.type; form.elements.annotationTemplate.value = item.annotation?.template || "standard"; form.elements.title.value = item.title; form.elements.body.value = item.body; form.elements.pageScope.value = item.rule?.pageScope || "global"; form.elements.includeTerms.value = (item.rule?.includeTerms || []).join(", "); form.elements.tags.value = (item.tags || []).join(", "); form.elements.startsAt.value = localInput(item.startsAt); form.elements.expiresAt.value = localInput(item.expiresAt); form.elements.links.value = linksText(item.links); } toggleMemoFields(); $("#personal-dialog").showModal(); }
 
-function openSettings(open) { $("#settings-panel").classList.toggle("open", open); $("#settings-panel").setAttribute("aria-hidden", String(!open)); }
-async function grantPattern(pattern) {
-  if (!/^https?:\/\//.test(pattern) || !pattern.endsWith("/*")) throw new Error("请输入以 http(s):// 开头、以 /* 结尾的站点模式");
-  const granted = await chrome.permissions.request({ origins: [pattern] });
-  if (!granted) throw new Error("用户未授予该站点权限");
-  const patterns = [...new Set([...(state.config.sitePatterns || []), pattern])];
-  const result = await send({ type: "REGISTER_SITES", patterns }); state.config.sitePatterns = result.patterns; renderSites(); toast("站点已授权，请刷新网页");
-}
+$("#personal-form").addEventListener("submit", async event => { event.preventDefault(); const data = new FormData(event.currentTarget); const id = data.get("id"); const pageScope = data.get("pageScope"); const payload = { type: data.get("type"), title: data.get("title"), body: data.get("body"), tags: data.get("tags").split(/[,，]/).map(x => x.trim()).filter(Boolean), links: parseLinks(data.get("links")), annotation: { template: data.get("annotationTemplate"), keywordTerms: [], anchors: [] }, startsAt: data.get("type") === "operation" ? new Date(data.get("startsAt")).toISOString() : null, expiresAt: data.get("type") === "operation" ? new Date(data.get("expiresAt")).toISOString() : null, rule: { pageScope, pageGroupIds: pageScope === "page_groups" && data.get("pageGroupId") ? [data.get("pageGroupId")] : [], sitePatterns: [], includeTerms: data.get("includeTerms").split(/[,，]/).map(x => x.trim()).filter(Boolean), excludeTerms: [], operator: "AND", caseSensitive: false, useRegex: false, cooldownMinutes: 30 } }; try { await directApi(`/api/personal-memos${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); $("#personal-dialog").close(); await load(true); toast("个人提醒已保存"); } catch (error) { toast(error.message); } });
 
-function openPersonal(id = null) {
-  const form = $("#personal-form"); form.reset(); state.editing = id ? state.bootstrap.memos.find(memo => memo.id === id) : null; $("#personal-title").textContent = id ? "编辑个人备忘" : "新建个人备忘";
-  fillPersonalPageGroups(state.editing?.rule?.pageGroupIds?.[0] || "");
-  if (state.editing) { form.elements.id.value = state.editing.id; form.elements.title.value = state.editing.title; form.elements.body.value = state.editing.body; form.elements.pageScope.value = state.editing.rule?.pageScope || (state.editing.rule?.sitePatterns?.length ? "page_groups" : "global"); form.elements.includeTerms.value = state.editing.rule?.includeTerms?.join(", ") || ""; form.elements.tags.value = state.editing.tags?.join(", ") || ""; }
-  togglePersonalPageScope();
-  $("#personal-dialog").showModal();
-}
-
-async function directApi(path, options = {}) { const response = await fetch(`${state.config.apiBase}${path}`, { headers: { "Content-Type": "application/json", "X-User-Id": state.config.userId }, ...options }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || "保存失败"); return payload; }
-
-$("#personal-form").addEventListener("submit", async event => {
-  event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const id = data.get("id");
-  const pageScope = data.get("pageScope");
-  const pageGroupIds = pageScope === "page_groups" && data.get("pageGroupId") ? [data.get("pageGroupId")] : [];
-  if (pageScope === "page_groups" && !pageGroupIds.length) return toast("请先在管理后台创建页面组");
-  const payload = { ownerId: state.config.userId, title: data.get("title"), body: data.get("body"), tags: data.get("tags").split(/[,，]/).map(x => x.trim()).filter(Boolean), links: [], priority: "normal", rule: { pageScope, pageGroupIds, sitePatterns: [], includeTerms: data.get("includeTerms").split(/[,，]/).map(x => x.trim()).filter(Boolean), excludeTerms: [], operator: "AND", caseSensitive: false, useRegex: false, cooldownMinutes: 30 } };
-  try { await directApi(`/api/personal-memos${id ? `/${id}?userId=${encodeURIComponent(state.config.userId)}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); $("#personal-dialog").close(); await load(true); toast("个人备忘已保存"); } catch (error) { toast(error.message); }
+document.addEventListener("submit", async event => {
+  const form = event.target.closest("[data-comment-form]");
+  if (!form) return;
+  event.preventDefault(); const memoId = form.dataset.commentForm; const content = form.elements.content.value.trim();
+  if (!content || !memoId) return;
+  const button = form.querySelector('[type="submit"]'); button.disabled = true;
+  try { const comment = await directApi(`/api/memos/${encodeURIComponent(memoId)}/comments`, { method: "POST", body: JSON.stringify({ content }) }); await send({ type: "TRACK_EVENT", memoId, domain: state.context.tab?.url || "", action: "comment_submitted", presentation: "sidepanel" }); form.elements.content.value = ""; (state.commentsByMemo[memoId] ||= []).push(comment); const memo = state.bootstrap.memos.find(item => item.id === memoId); if (memo) memo.commentCount = Number(memo.commentCount || 0) + 1; renderComments(memoId); toast("评论已发送"); } catch (error) { toast(error.message); } finally { button.disabled = false; }
 });
 
+function isFilePattern(pattern = "") { return /^file:\/\//i.test(String(pattern)); }
+function isFileAccessAllowed() { return new Promise(resolve => { try { chrome.extension?.isAllowedFileSchemeAccess ? chrome.extension.isAllowedFileSchemeAccess(resolve) : resolve(false); } catch { resolve(false); } }); }
+function currentPagePattern(tabUrl = "") {
+  const url = new URL(tabUrl);
+  if (url.protocol === "file:") return `${url.href.replace(/[?#].*$/, "")}*`;
+  return `${url.origin}${url.pathname}*`;
+}
+function currentScopePattern(tabUrl = "") {
+  const url = new URL(tabUrl);
+  if (url.protocol === "file:") return url.href.replace(/[?#].*$/, "").replace(/\/[^/]*$/, "/*");
+  return `${url.origin}/*`;
+}
+async function saveExcludedPattern(pattern) { if (!/^(https?|file):\/\//i.test(pattern)) throw new Error("请输入以 http(s):// 或 file:/// 开头的网址规则"); const result = await send({ type: "REGISTER_SITES", patterns: Array.from(new Set([...(state.config.excludedSitePatterns || []), pattern])) }); state.config.excludedSitePatterns = result.patterns || []; renderSites(); }
 document.addEventListener("click", async event => {
   const tab = event.target.closest("[data-tab]"); if (tab) switchTab(tab.dataset.tab);
-  const scope = event.target.closest("[data-scope]"); if (scope) { state.scope = scope.dataset.scope; $$("[data-scope]").forEach(el => el.classList.toggle("active", el === scope)); renderMemos(); }
-  if (event.target.closest("#open-settings")) openSettings(true); if (event.target.closest("#close-settings")) openSettings(false);
+  const filter = event.target.closest("[data-filter]"); if (filter) { state.filter = filter.dataset.filter; $$('[data-filter]').forEach(el => el.classList.toggle("active", el === filter)); renderMemos(); }
+  if (event.target.closest("#open-settings")) $("#settings-panel").classList.add("open"); if (event.target.closest("#close-settings")) $("#settings-panel").classList.remove("open");
+  const quickUiMode = event.target.closest("#quick-ui-mode"); if (quickUiMode && !quickUiMode.disabled) { try { await changeUiMode(quickUiMode.dataset.nextMode); } catch (error) { toast(error.message); } }
+  if (event.target.closest("#hide-primary-ui")) { await send({ type: "HIDE_PRIMARY_UI", tabId: state.context.tab?.id }); window.close(); }
+  if (event.target.closest("#bind-invite")) { try { const result = await send({ type: "BIND_INVITATION", inviteCode: $("#invite-code").value.trim() }); if (result.error) throw new Error(result.error); await load(true); toast("成员账号已绑定"); } catch (error) { toast(error.message); } }
+  if (event.target.closest("[data-unbind]") && confirm("解除本设备的成员绑定？")) { await send({ type: "UNBIND_MEMBER" }); await load(); toast("已解除绑定"); }
   if (event.target.closest("#refresh-context") || event.target.closest("#footer-sync")) { try { await load(true); toast("内容已同步"); } catch (error) { toast(error.message); } }
-  if (event.target.closest("#new-personal")) openPersonal(); const edit = event.target.closest("[data-edit-personal]"); if (edit) openPersonal(edit.dataset.editPersonal);
-  const del = event.target.closest("[data-delete-personal]"); if (del && confirm("确认删除这条个人备忘？")) { try { await directApi(`/api/personal-memos/${del.dataset.deletePersonal}?userId=${encodeURIComponent(state.config.userId)}`, { method: "DELETE" }); await load(true); toast("个人备忘已删除"); } catch (error) { toast(error.message); } }
-  if (event.target.closest("[data-close-dialog]")) $("#personal-dialog").close();
-  const action = event.target.closest("[data-alert-action]"); if (action) { await send({ type: "MATCH_ACTION", tabId: state.context.tab.id, memoId: action.dataset.id, domain: action.dataset.domain, action: action.dataset.alertAction, minutes: 60 }); await load(); toast(action.dataset.alertAction === "confirmed" ? "已确认" : "将在 1 小时后再次提醒"); }
-  const locate = event.target.closest("[data-locate-match]"); if (locate) {
-    const result = await send({ type: "FOCUS_IN_PAGE", tabId: state.context.tab.id, memoId: locate.dataset.locateMatch });
-    if (result?.found) toast(`已定位，共 ${result.count || 1} 处匹配`);
-    else if (result?.reason === "no_keywords") toast("这条备忘没有设置定位关键词");
-    else if (result?.reason === "page_unavailable") toast("当前页面未授权或尚未加载插件，请授权后刷新页面");
-    else toast(`页面中未找到：${result?.terms?.join("、") || "对应关键词"}`);
-  }
-  const feedback = event.target.closest("[data-feedback]"); if (feedback) { await send({ type: "TRACK_EVENT", memoId: feedback.dataset.id, domain: feedback.dataset.domain, action: feedback.dataset.feedback, presentation: "sidepanel" }); toast("感谢反馈"); }
+  if (event.target.closest("#new-personal")) { if (!state.session?.bound) return toast("请先使用邀请码绑定"); openPersonal(); } const editMemo = event.target.closest("[data-edit-personal]"); if (editMemo) openPersonal(editMemo.dataset.editPersonal);
+  const deleteMemo = event.target.closest("[data-delete-personal]"); if (deleteMemo && confirm("确认删除这条个人提醒？")) { try { await directApi(`/api/personal-memos/${deleteMemo.dataset.deletePersonal}`, { method: "DELETE" }); await load(true); } catch (error) { toast(error.message); } }
+  const close = event.target.closest("[data-close-dialog]"); if (close) $(`#${close.dataset.closeDialog}-dialog`).close();
+  const action = event.target.closest("[data-alert-action]"); if (action) { const memo = state.bootstrap.memos.find(item => item.id === action.dataset.id); const strongOperation = action.dataset.alertAction === "confirmed" && memo?.type === "operation" && memo.annotation?.template === "strong"; if (strongOperation && !confirm("确认已经完成这项操作？确认后，本次页面将关闭提醒。")) return; const result = await send({ type: "MATCH_ACTION", tabId: state.context.tab?.id, memoId: action.dataset.id, domain: action.dataset.domain, action: action.dataset.alertAction, minutes: 60 }); if (result.error) return toast(result.error); await load(); toast(result.dismissedCurrentPage ? "本页提醒已完成并关闭" : action.dataset.alertAction === "confirmed" ? "今日已确认" : "将在 1 小时后再次提醒"); }
+  const locate = event.target.closest("[data-locate-match]"); if (locate) { const result = await send({ type: "FOCUS_IN_PAGE", tabId: state.context.tab?.id, memoId: locate.dataset.locateMatch }); toast(result?.found ? `已定位，共 ${result.count || 1} 处` : `页面中未找到：${result?.terms?.join("、") || "对应关键词"}`); }
+  const alertExpand = event.target.closest("[data-alert-expand]"); if (alertExpand) { const body = document.getElementById(alertExpand.getAttribute("aria-controls")); if (body) { const expanded = !body.classList.contains("expanded"); body.classList.toggle("expanded", expanded); alertExpand.setAttribute("aria-expanded", String(expanded)); alertExpand.textContent = expanded ? "收起全文" : "展开全文"; if (!expanded) body.scrollTop = 0; } }
+  const openComment = event.target.closest("[data-open-comments]"); if (openComment) await openComments(openComment.dataset.openComments);
+  const deleteComment = event.target.closest("[data-delete-comment]"); if (deleteComment && confirm("删除这条评论？")) { try { const memoId = deleteComment.dataset.commentMemoId; await directApi(`/api/memo-comments/${encodeURIComponent(deleteComment.dataset.deleteComment)}`, { method: "DELETE" }); state.commentsByMemo[memoId] = (state.commentsByMemo[memoId] || []).filter(item => item.id !== deleteComment.dataset.deleteComment); const memo = state.bootstrap.memos.find(item => item.id === memoId); if (memo) memo.commentCount = Math.max(0, Number(memo.commentCount || 0) - 1); renderComments(memoId); toast("评论已删除"); } catch (error) { toast(error.message); } }
+  const supplier = event.target.closest("[data-open-supplier]"); if (supplier) { const result = await send({ type: "OPEN_SUPPLIER_IN_PAGE", tabId: state.context.tab?.id, supplierId: supplier.dataset.openSupplier }); toast(result?.ok ? "供应商卡片已在网页中打开" : "当前页面暂时无法展示供应商卡片"); }
+  const feedback = event.target.closest("[data-feedback]"); if (feedback) { await send({ type: "TRACK_EVENT", memoId: feedback.dataset.id, domain: feedback.dataset.domain || state.context.tab?.url || "", action: feedback.dataset.feedback, presentation: "sidepanel" }); feedback.parentElement?.querySelectorAll("[data-feedback]").forEach(button => { const selected = button === feedback; button.classList.toggle("selected", selected); button.setAttribute("aria-pressed", String(selected)); }); toast(feedback.dataset.feedback === "feedback_up" ? "已记录：赞" : "已记录：踩"); }
   const copy = event.target.closest("[data-copy]"); if (copy) { await navigator.clipboard.writeText(copy.dataset.copy); toast("链接已复制"); }
-  const remove = event.target.closest("[data-remove-site]"); if (remove) { const pattern = remove.dataset.removeSite; await chrome.permissions.remove({ origins: [pattern] }); const patterns = state.config.sitePatterns.filter(item => item !== pattern); const result = await send({ type: "REGISTER_SITES", patterns }); state.config.sitePatterns = result.patterns; renderSites(); toast("站点授权已移除"); }
+  const openMemoLink = event.target.closest("[data-open-memo-link]"); if (openMemoLink) await send({ type: "TRACK_EVENT", memoId: openMemoLink.dataset.openMemoLink, domain: state.context.tab?.url || "", action: "link_opened", presentation: "sidepanel" });
+  const copyMemoLink = event.target.closest("[data-copy-memo-link]"); if (copyMemoLink) { await navigator.clipboard.writeText(copyMemoLink.dataset.copyMemoLink); await send({ type: "TRACK_EVENT", memoId: copyMemoLink.dataset.copyMemoId, domain: state.context.tab?.url || "", action: "link_copied", presentation: "sidepanel" }); toast("链接已复制"); }
+  const remove = event.target.closest("[data-remove-site]"); if (remove) { const result = await send({ type: "REGISTER_SITES", patterns: (state.config.excludedSitePatterns || []).filter(item => item !== remove.dataset.removeSite) }); state.config.excludedSitePatterns = result.patterns || []; renderSites(); }
+  if (event.target.closest("#start-annotation-code")) { const code = $("#annotation-code").value.trim(); if (!/^\d{6}$/.test(code)) return toast("请输入 6 位标记码"); const result = await send({ type: "START_ANNOTATION_CODE", code }); toast(result.error || "标记页面已打开"); }
 });
-
-$("#save-connection").addEventListener("click", async () => { try { const result = await send({ type: "SET_CONFIG", patch: { apiBase: $("#api-base").value.replace(/\/$/, ""), userId: $("#user-id").value.trim() } }); state.config = result.config; await load(true); toast("连接设置已保存"); } catch (error) { toast(error.message); } });
-$("#grant-site").addEventListener("click", async () => { try { await grantPattern($("#site-pattern").value.trim()); $("#site-pattern").value = ""; } catch (error) { toast(error.message); } });
-$("#grant-current").addEventListener("click", async () => { try { const url = new URL(state.context.tab.url); if (!url.protocol.startsWith("http")) throw new Error("当前页面不支持授权"); await grantPattern(`${url.origin}/*`); } catch (error) { toast(error.message); } });
+document.addEventListener("toggle", event => {
+  const details = event.target.closest?.("[data-memo-details]");
+  if (!details?.open) return;
+  send({ type: "TRACK_EVENT", memoId: details.dataset.memoDetails, domain: state.context.tab?.url || "", action: "expanded", presentation: "sidepanel" });
+}, true);
+$("#save-connection").addEventListener("click", async () => { try { const apiBase = $("#api-base").value.replace(/\/$/, ""); const originPattern = `${new URL(apiBase).origin}/*`; if (!(await chrome.permissions.contains({ origins: [originPattern] })) && !(await chrome.permissions.request({ origins: [originPattern] }))) throw new Error("需要授权服务地址"); const result = await send({ type: "SET_CONFIG", patch: { apiBase } }); state.config = result.config; toast("服务地址已保存"); } catch (error) { toast(error.message); } });
+$("#grant-site").addEventListener("click", async () => { try { await saveExcludedPattern($("#site-pattern").value.trim()); $("#site-pattern").value = ""; toast("不提醒页面已保存，请刷新网页"); } catch (error) { toast(error.message); } });
+$("#block-current-page").addEventListener("click", async () => { try { await saveExcludedPattern(currentPagePattern(state.context.tab.url)); toast("本页已设为不提醒"); } catch (error) { toast(error.message); } });
+$("#grant-current").addEventListener("click", async () => { try { await saveExcludedPattern(currentScopePattern(state.context.tab.url)); toast("当前网站/文件夹已设为不提醒"); } catch (error) { toast(error.message); } });
 $("#global-search").addEventListener("input", event => { state.query = event.target.value; renderContext(); renderAlerts(); renderMemos(); renderTools(); });
+$("#personal-form [name=type]").addEventListener("change", toggleMemoFields); $("#personal-form [name=pageScope]").addEventListener("change", toggleMemoFields);
+$("#ui-mode").addEventListener("change", async event => { try { await changeUiMode(event.target.value); } catch (error) { toast(error.message); } });
 document.addEventListener("keydown", event => { if (event.ctrlKey && event.key.toLowerCase() === "k") { event.preventDefault(); $("#global-search").focus(); } });
-$("#personal-form [name=pageScope]").addEventListener("change", togglePersonalPageScope);
-
 load().catch(error => { $("#connection-dot").classList.add("error"); $("#connection-text").textContent = "无法连接服务"; toast(error.message); });

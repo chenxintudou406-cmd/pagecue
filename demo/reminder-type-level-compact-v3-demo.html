@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>页知3.0｜紧凑玻璃卡片Demo</title>
+  <style>
+    :root{
+      --ink:#102a3a;--muted:#536b7a;--quiet:#718692;
+      --blue:#1677b8;--blue-soft:#dcefff;
+      --yellow:#d9990b;--yellow-soft:#fff1bd;
+      --red:#c33c34;--red-soft:#ffdcd8;
+      --level:var(--blue);--level-soft:var(--blue-soft);--level-ink:#fff;
+      --clear:rgb(255 255 255/.67);--clear-border:rgb(255 255 255/.76);
+      --smoke:rgb(8 28 47/.86);--smoke-border:rgb(255 255 255/.2);
+    }
+    *{box-sizing:border-box}html,body{min-height:100%;margin:0}
+    body{color:var(--ink);background:linear-gradient(180deg,rgb(224 239 245/.5),rgb(237 245 245/.69)),url("../admin/assets/lake-muted.webp") center/cover fixed no-repeat;font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14px;line-height:1.5}
+    body[data-level="medium"]{--level:var(--yellow);--level-soft:var(--yellow-soft);--level-ink:#2d2100}
+    body[data-level="heavy"]{--level:var(--red);--level-soft:var(--red-soft)}
+    button,a{font:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid rgb(22 119 184/.28);outline-offset:2px}
+    .shell{width:min(1060px,calc(100% - 36px));margin:24px auto 42px}
+    .brand{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px;font-weight:650}.brand img{width:28px;height:28px;border-radius:8px;box-shadow:0 8px 20px rgb(9 47 87/.18)}
+    h1{margin:11px 0 5px;font-size:clamp(26px,3vw,36px);line-height:1.18;letter-spacing:-.035em}.lead{margin:0;color:var(--muted)}
+
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:18px;padding:9px 11px;border:1px solid rgb(255 255 255/.68);border-radius:15px;background:rgb(255 255 255/.52);-webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);box-shadow:inset 0 1px 0 rgb(255 255 255/.84),0 14px 40px rgb(38 69 85/.1)}
+    .toolbar>span{color:var(--quiet);font-size:11px}.segmented{display:flex;gap:4px;padding:3px;border:1px solid rgb(255 255 255/.66);border-radius:11px;background:rgb(235 243 247/.66)}
+    .segmented button{min-width:78px;min-height:38px;padding:0 14px;border:0;border-radius:8px;color:#536a79;background:transparent;font-size:12px;font-weight:750;transition:.16s ease}
+    .segmented button[aria-pressed="true"]{color:var(--level-ink);background:var(--level);box-shadow:0 8px 18px color-mix(in srgb,var(--level) 28%,transparent)}
+
+    .stage{margin-top:15px;padding:22px;border:1px solid rgb(255 255 255/.6);border-radius:25px;background:rgb(255 255 255/.27);-webkit-backdrop-filter:blur(8px) saturate(118%);backdrop-filter:blur(8px) saturate(118%);box-shadow:0 28px 80px rgb(18 48 64/.17),inset 0 1px 0 rgb(255 255 255/.72)}
+    .context{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 15px;border:1px solid rgb(255 255 255/.74);border-radius:14px;background:rgb(248 252 253/.67);-webkit-backdrop-filter:blur(16px) saturate(132%);backdrop-filter:blur(16px) saturate(132%);box-shadow:inset 0 1px 0 #fff,0 16px 36px rgb(45 72 84/.08)}
+    .context strong{flex:0 0 auto;font-size:12px}.context p{margin:0;color:#506775;font-size:11px;line-height:1.7}.matched{padding:1px 3px;border-bottom:2px solid var(--level);border-radius:3px;background:var(--level-soft);color:#183143;font-weight:750}
+    .section-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:18px 2px 9px}.section-head strong{font-size:13px}.section-head span{color:#607684;font-size:10px}
+    .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+    .card{overflow:hidden;min-width:0;border-radius:18px;transition:transform .18s ease}.card:hover{transform:translateY(-2px)}
+    .knowledge{border:1px solid var(--clear-border);background:var(--clear);-webkit-backdrop-filter:blur(22px) saturate(148%);backdrop-filter:blur(22px) saturate(148%);box-shadow:0 22px 54px rgb(16 45 62/.16),inset 0 1px 0 rgb(255 255 255/.84)}
+    .operation{color:#f3f8fb;border:1px solid var(--smoke-border);background:var(--smoke);-webkit-backdrop-filter:blur(22px) saturate(132%);backdrop-filter:blur(22px) saturate(132%);box-shadow:0 24px 58px rgb(3 19 33/.31),inset 0 1px 0 rgb(255 255 255/.16)}
+    .card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:54px;padding:9px 14px;color:var(--level-ink);background:var(--level)}
+    .knowledge .card-head{color:#183143;background:color-mix(in srgb,var(--level) 34%,rgb(255 255 255/.8))}body[data-level="medium"] .knowledge .card-head{background:color-mix(in srgb,var(--level) 42%,rgb(255 255 255/.76))}
+    .type{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:850}.icon{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:rgb(255 255 255/.42);box-shadow:inset 0 1px 0 rgb(255 255 255/.7)}.icon svg{width:17px;height:17px}
+    .operation .icon{border-radius:8px;background:rgb(0 0 0/.14);box-shadow:inset 0 1px 0 rgb(255 255 255/.14)}
+    .level{padding:3px 8px;border:1px solid rgb(255 255 255/.42);border-radius:999px;background:rgb(255 255 255/.22);font-size:10px;font-weight:850}.knowledge .level{border-color:rgb(24 49 67/.16);background:rgb(255 255 255/.44)}
+    .content{padding:14px 16px 13px}.content h2{margin:0 0 5px;font-size:16px;line-height:1.35;letter-spacing:-.01em}.content p{min-height:39px;margin:0;color:#4d6574;font-size:11px;line-height:1.65}.operation .content p{color:#c9d8e1}
+    .meta{display:flex;align-items:center;gap:8px;margin-top:10px;color:#6b818e;font-size:10px}.meta i{width:3px;height:3px;border-radius:50%;background:currentColor}.operation .meta{color:#9eb2be}
+    .footer{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:7px 9px 7px 16px;border-top:1px solid rgb(111 139 155/.16);background:rgb(255 255 255/.25)}.operation .footer{border-color:rgb(255 255 255/.1);background:rgb(0 0 0/.13)}
+    .link{display:inline-flex;align-items:center;gap:5px;color:#155f9d;font-size:10px;font-weight:750;text-decoration:none}.operation .link{color:#90d2fa}.link:hover{text-decoration:underline}.link svg{width:13px;height:13px}
+    .actions{display:flex;gap:6px}.button{min-height:34px;padding:0 12px;border:1px solid rgb(116 144 159/.26);border-radius:999px;color:#405d6e;background:rgb(255 255 255/.66);font-size:10px;font-weight:800}.button.primary{border-color:color-mix(in srgb,var(--level) 72%,#fff);color:var(--level-ink);background:var(--level);box-shadow:0 7px 16px color-mix(in srgb,var(--level) 22%,transparent)}.operation .button{border-color:rgb(255 255 255/.15);color:#d7e4eb;background:rgb(255 255 255/.08)}.operation .button.primary{color:var(--level-ink);background:var(--level)}
+    .notes{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}.note{padding:10px 11px;border:1px solid rgb(255 255 255/.56);border-radius:12px;background:rgb(255 255 255/.4);color:#526a78;font-size:10px}.note strong{display:block;margin-bottom:2px;color:#18384b;font-size:11px}
+    .toast{position:fixed;z-index:20;right:24px;bottom:24px;padding:10px 13px;border:1px solid rgb(255 255 255/.62);border-radius:11px;color:#fff;background:rgb(7 35 66/.9);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 16px 40px rgb(7 35 66/.24);opacity:0;transform:translateY(9px);pointer-events:none;transition:.18s ease;font-size:11px}.toast.show{opacity:1;transform:translateY(0)}
+    @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.toolbar,.stage,.context,.knowledge{background:rgb(248 251 252/.97)}.operation{background:rgb(8 28 47/.98)}}
+    @media(max-width:700px){.shell{width:calc(100% - 20px);margin-top:12px}.toolbar{align-items:stretch;flex-direction:column}.toolbar>span{display:none}.segmented{width:100%}.segmented button{flex:1;min-width:0;padding:0 7px}.stage{padding:11px;border-radius:19px}.context{align-items:flex-start;flex-direction:column;gap:5px}.cards,.notes{grid-template-columns:1fr}.section-head{align-items:flex-start;flex-direction:column;gap:2px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+  </style>
+</head>
+<body data-level="light">
+  <main class="shell">
+    <header><div class="brand"><img src="../extension/assets/pagecue-logo-1024.png" alt="页知">页知 · 紧凑卡片方案</div><h1>颜色更明确，内容更短</h1><p class="lead">知识和操作保持不同材质，轻中重改为整块颜色识别。</p></header>
+    <section class="toolbar" aria-label="切换提醒等级"><span>一般提醒内容 · 同时预览知识与操作</span><div class="segmented" id="level-switch"><button type="button" data-level="light" aria-pressed="true">轻</button><button type="button" data-level="medium" aria-pressed="false">中</button><button type="button" data-level="heavy" aria-pressed="false">重</button></div></section>
+    <section class="stage">
+      <article class="context"><strong>当前页面命中2条提醒</strong><p>客户选择了<span class="matched">企业版报价</span>，请确认折扣条件后继续。</p></article>
+      <div class="section-head"><strong>一般提醒内容</strong><span id="current-level">蓝色轻度 · 不主动打断</span></div>
+      <div class="cards">
+        <article class="card knowledge">
+          <header class="card-head"><span class="type"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5v-16ZM20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5v-16Z"/></svg></span>知识提醒</span><span class="level">轻</span></header>
+          <div class="content"><h2>企业报价折扣规则</h2><p>报价前需确认客户规模与合同年限；例外价格请先联系销售负责人。</p><div class="meta"><span>组织知识</span><i></i><span>今天更新</span><i></i><span>2个链接</span></div></div>
+          <footer class="footer"><a class="link" href="#" onclick="return false">查看规则<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M8 7h9v9"/></svg></a><div class="actions"><button class="button primary knowledge-action" type="button">查看</button></div></footer>
+        </article>
+        <article class="card operation">
+          <header class="card-head"><span class="type"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3M9 5a3 3 0 0 1 6 0m-6 0a3 3 0 0 0 6 0m-6 0h6m3-2 3 3-8 8-4 1 1-4 8-8Z"/></svg></span>操作提醒</span><span class="level">轻</span></header>
+          <div class="content"><h2>补充询单信息</h2><p>请补充客户合同年限，并在报价备注中填写本次折扣依据。</p><div class="meta"><span>负责人：陈欣</span><i></i><span>今天17:30前</span></div></div>
+          <footer class="footer"><a class="link" href="#" onclick="return false">打开询单<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M8 7h9v9"/></svg></a><div class="actions"><button class="button">稍后</button><button class="button primary operation-action" type="button">去处理</button></div></footer>
+        </article>
+      </div>
+      <section class="notes"><article class="note"><strong>结构压缩</strong>标题区、正文区和操作区只有三层。</article><article class="note"><strong>颜色增强</strong>整块标题区使用等级色，不再依赖细线。</article><article class="note"><strong>等级简化</strong>仅显示“轻/中/重”，不使用强度柱。</article></section>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite">已记录</div>
+  <script>
+    const names={light:"轻",medium:"中",heavy:"重"};
+    const descriptions={light:"蓝色轻度 · 不主动打断",medium:"黄色中度 · 需要确认",heavy:"红色重度 · 持续出现"};
+    let level="light",timer;
+    function render(){document.body.dataset.level=level;document.querySelectorAll("#level-switch button").forEach(button=>button.setAttribute("aria-pressed",String(button.dataset.level===level)));document.querySelectorAll(".level").forEach(node=>node.textContent=names[level]);document.getElementById("current-level").textContent=descriptions[level];document.querySelector(".knowledge-action").textContent=level==="light"?"查看":level==="medium"?"知道了":"已阅读";document.querySelector(".operation-action").textContent=level==="light"?"去处理":level==="medium"?"完成了":"立即处理"}
+    function showToast(message){const node=document.getElementById("toast");node.textContent=message;node.classList.add("show");clearTimeout(timer);timer=setTimeout(()=>node.classList.remove("show"),2200)}
+    document.getElementById("level-switch").addEventListener("click",event=>{const button=event.target.closest("button[data-level]");if(!button)return;level=button.dataset.level;render()});
+    document.querySelector(".knowledge-action").addEventListener("click",()=>showToast("已记录知识确认"));document.querySelector(".operation-action").addEventListener("click",()=>showToast("已记录操作状态"));render();
+  </script>
+</body>
+</html>

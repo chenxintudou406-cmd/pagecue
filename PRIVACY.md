@@ -1,4 +1,4 @@
-# PageCue V1 Privacy Notice
+# 页知 PageCue Privacy Notice
 
 PageCue only performs page matching on HTTP or HTTPS sites that the user explicitly authorizes.
 
@@ -14,6 +14,7 @@ PageCue only performs page matching on HTTP or HTTPS sites that the user explici
 - The current page domain, excluding the full URL, path, and query parameters.
 - Action events such as triggered, opened, confirmed, dismissed, snoozed, and usefulness feedback.
 - Personal memos deliberately created by a user and organization content published by an administrator.
+- A random device ID, extension version, browser user-agent string, and Web Push subscription endpoint and encryption keys required to deliver organization updates.
 
 This data is used only to deliver contextual reminders, synchronize authorized content, and measure product reliability. It is not used for advertising, behavioral profiling, or resale. When the service is offline, the extension queues up to 100 events locally and retries after connectivity returns.
 
@@ -23,6 +24,7 @@ This data is used only to deliver contextual reminders, synchronize authorized c
 - `scripting`: injects the local matching script only into user-authorized sites.
 - `sidePanel`: displays current alerts, the memo library, and the toolbox.
 - `notifications`: displays system notifications for alerts marked as important by an administrator.
+- `alarms`: performs a lightweight server-version check every 60 minutes when push delivery is unavailable or missed.
 - `tabs`: reads the current tab title and domain and maintains alert state for that tab.
 - Optional host permissions: granted per site by the user and removable at any time.
 

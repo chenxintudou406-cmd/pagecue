@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>页知 3.0｜玻璃卡片体系 Demo</title>
+  <style>
+    :root {
+      --ink: #102a3a;
+      --muted: #536b7a;
+      --quiet: #6e8290;
+      --glass: rgb(255 255 255 / .62);
+      --glass-strong: rgb(255 255 255 / .78);
+      --glass-border: rgb(255 255 255 / .72);
+      --smoke: rgb(8 28 47 / .82);
+      --smoke-soft: rgb(21 48 68 / .74);
+      --smoke-border: rgb(255 255 255 / .2);
+      --blue: #1677b8;
+      --blue-soft: #dcefff;
+      --yellow: #d9990b;
+      --yellow-soft: #fff1bd;
+      --red: #c33c34;
+      --red-soft: #ffdcd8;
+      --level: var(--blue);
+      --level-soft: var(--blue-soft);
+      --radius: 20px;
+      --shadow: 0 24px 64px rgb(16 45 62 / .18), inset 0 1px 0 rgb(255 255 255 / .86);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgb(224 239 245 / .48), rgb(237 245 245 / .66)),
+        url("../admin/assets/lake-muted.webp") center / cover fixed no-repeat;
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    body[data-level="medium"] { --level: var(--yellow); --level-soft: var(--yellow-soft); }
+    body[data-level="heavy"] { --level: var(--red); --level-soft: var(--red-soft); }
+    button, a { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, a:focus-visible { outline: 3px solid rgb(22 119 184 / .28); outline-offset: 2px; }
+
+    .shell { width: min(1320px, calc(100% - 36px)); margin: 24px auto 44px; }
+    .topline { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+    .brand { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .brand img { width: 28px; height: 28px; border-radius: 8px; box-shadow: 0 8px 20px rgb(9 47 87 / .18); }
+    h1 { margin: 12px 0 6px; font-size: clamp(26px, 3vw, 38px); line-height: 1.16; letter-spacing: -.035em; }
+    .lead { margin: 0; color: var(--muted); }
+    .material-note { max-width: 330px; margin: 0; color: var(--quiet); font-size: 12px; text-align: right; }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 20px;
+      padding: 10px;
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      background: rgb(255 255 255 / .5);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      backdrop-filter: blur(18px) saturate(140%);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / .82), 0 14px 40px rgb(38 69 85 / .1);
+    }
+    .switch-group { display: flex; align-items: center; gap: 9px; }
+    .switch-label { margin-left: 4px; color: var(--quiet); font-size: 11px; }
+    .segmented { display: flex; gap: 3px; padding: 3px; border: 1px solid rgb(255 255 255 / .66); border-radius: 12px; background: rgb(236 243 247 / .64); }
+    .segmented button { min-height: 38px; padding: 0 15px; border: 0; border-radius: 9px; color: #526978; background: transparent; font-size: 12px; font-weight: 650; transition: background .16s ease, color .16s ease, box-shadow .16s ease; }
+    .segmented button[aria-pressed="true"] { color: #143247; background: rgb(255 255 255 / .9); box-shadow: 0 4px 14px rgb(28 62 82 / .12), inset 0 1px 0 #fff; }
+    #level-switch button[aria-pressed="true"] { color: #fff; background: var(--level); box-shadow: 0 8px 18px color-mix(in srgb, var(--level) 28%, transparent); }
+    body[data-level="medium"] #level-switch button[aria-pressed="true"] { color: #2d2100; }
+
+    .stage {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(620px, .9fr);
+      gap: 22px;
+      min-height: 640px;
+      margin-top: 16px;
+      padding: 28px;
+      overflow: hidden;
+      border: 1px solid rgb(255 255 255 / .58);
+      border-radius: 28px;
+      background: rgb(255 255 255 / .25);
+      -webkit-backdrop-filter: blur(7px) saturate(118%);
+      backdrop-filter: blur(7px) saturate(118%);
+      box-shadow: 0 28px 80px rgb(18 48 64 / .17), inset 0 1px 0 rgb(255 255 255 / .72);
+    }
+
+    .context-page {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid rgb(255 255 255 / .62);
+      border-radius: 20px;
+      background: rgb(247 251 252 / .72);
+      box-shadow: inset 0 1px 0 #fff, 0 18px 48px rgb(45 72 84 / .1);
+      -webkit-backdrop-filter: blur(16px) saturate(132%);
+      backdrop-filter: blur(16px) saturate(132%);
+    }
+    .windowbar { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 13px; border-bottom: 1px solid rgb(151 172 185 / .26); background: rgb(237 244 247 / .64); }
+    .dots { display: flex; gap: 6px; }
+    .dots i { width: 8px; height: 8px; border-radius: 50%; background: #aebdc5; }
+    .url { flex: 1; overflow: hidden; padding: 4px 10px; border-radius: 7px; background: rgb(255 255 255 / .68); color: #768a96; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .appbar { display: flex; align-items: center; justify-content: space-between; height: 58px; padding: 0 20px; border-bottom: 1px solid rgb(151 172 185 / .22); background: rgb(255 255 255 / .52); }
+    .appname { font-weight: 750; }.appname span { color: #155f9d; }
+    .appnav { display: flex; gap: 20px; color: #6d818d; font-size: 11px; }
+    .page { padding: 24px; }
+    .breadcrumb { color: #7d909b; font-size: 10px; }
+    .page h2 { margin: 13px 0 5px; font-size: 23px; letter-spacing: -.02em; }
+    .page-meta { display: flex; flex-wrap: wrap; gap: 10px 18px; color: #687d89; font-size: 11px; }
+    .match-panel { margin-top: 20px; padding: 17px 18px; border: 1px solid rgb(255 255 255 / .78); border-radius: 14px; background: rgb(255 255 255 / .58); box-shadow: inset 0 1px 0 #fff; }
+    .match-panel strong { display: block; margin-bottom: 7px; font-size: 12px; }
+    .match-panel p { margin: 0; color: #506775; font-size: 12px; line-height: 1.8; }
+    .matched { padding: 1px 3px; border-bottom: 2px solid var(--level); border-radius: 3px 3px 1px 1px; background: var(--level-soft); color: #183143; font-weight: 700; }
+    .facts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+    .fact { min-width: 0; padding: 12px 13px; border: 1px solid rgb(255 255 255 / .68); border-radius: 12px; background: rgb(255 255 255 / .43); }
+    .fact span { display: block; margin-bottom: 4px; color: #7a8e99; font-size: 10px; }
+    .fact b { display: block; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .context-foot { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgb(132 157 171 / .18); color: #718691; font-size: 10px; }
+
+    .cards-area { display: flex; flex-direction: column; justify-content: center; gap: 16px; min-width: 0; }
+    .compare-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 0 4px; }
+    .compare-head strong { font-size: 13px; }
+    .compare-head span { color: #607684; font-size: 11px; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: stretch; }
+
+    .reminder-card {
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .reminder-card:hover { transform: translateY(-2px); }
+    .reminder-card::before { content: ""; position: absolute; z-index: 2; top: 0; right: 0; left: 0; height: 4px; background: var(--level); }
+    .knowledge-card {
+      color: var(--ink);
+      border: 1px solid var(--glass-border);
+      background: var(--glass);
+      -webkit-backdrop-filter: blur(22px) saturate(148%);
+      backdrop-filter: blur(22px) saturate(148%);
+    }
+    .operation-card {
+      color: #f3f8fb;
+      border: 1px solid var(--smoke-border);
+      background: var(--smoke);
+      -webkit-backdrop-filter: blur(22px) saturate(132%);
+      backdrop-filter: blur(22px) saturate(132%);
+      box-shadow: 0 28px 70px rgb(3 19 33 / .32), inset 0 1px 0 rgb(255 255 255 / .18);
+    }
+    .card-body { padding: 18px 18px 16px; }
+    .card-type { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .type-name { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; }
+    .type-name svg { width: 17px; height: 17px; color: var(--level); }
+    .level-chip { padding: 3px 8px; border: 1px solid color-mix(in srgb, var(--level) 38%, transparent); border-radius: 999px; color: #173244; background: color-mix(in srgb, var(--level-soft) 78%, transparent); font-size: 10px; font-weight: 700; }
+    .operation-card .level-chip { color: #fff; background: color-mix(in srgb, var(--level) 48%, transparent); }
+    body[data-level="medium"] .operation-card .level-chip { color: #2d2100; background: #efb62a; }
+    .card-title { margin: 14px 0 5px; font-size: 17px; line-height: 1.35; letter-spacing: -.015em; }
+    .card-summary { min-height: 56px; margin: 0; color: #4b6473; font-size: 12px; line-height: 1.65; }
+    .operation-card .card-summary { color: #c9d8e1; }
+    .entity-box { margin-top: 14px; padding: 11px 12px; border: 1px solid rgb(113 145 162 / .18); border-radius: 12px; background: rgb(255 255 255 / .34); }
+    .operation-card .entity-box { border-color: rgb(255 255 255 / .12); background: rgb(255 255 255 / .07); }
+    .entity-name { display: block; overflow: hidden; margin-bottom: 8px; font-size: 12px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+    .entity-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 10px; }
+    .entity-facts span { color: #657b89; font-size: 10px; }
+    .entity-facts b { display: block; margin-top: 2px; color: #1c3a4d; font-size: 11px; }
+    .operation-card .entity-facts span { color: #9eb3c1; }
+    .operation-card .entity-facts b { color: #fff; }
+    .card-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 13px; color: #155f9d; font-size: 11px; font-weight: 700; text-decoration: none; }
+    .operation-card .card-link { color: #8ed0fa; }
+    .card-link:hover { text-decoration: underline; }
+    .card-link svg { width: 14px; height: 14px; }
+    .card-footer { display: flex; align-items: center; justify-content: space-between; gap: 9px; min-height: 58px; padding: 10px 12px 10px 18px; border-top: 1px solid rgb(111 139 155 / .17); background: rgb(255 255 255 / .28); }
+    .operation-card .card-footer { border-color: rgb(255 255 255 / .1); background: rgb(0 0 0 / .12); }
+    .footnote { color: #6c818e; font-size: 10px; }
+    .operation-card .footnote { color: #9eb1bd; }
+    .actions { display: flex; gap: 6px; }
+    .button { min-height: 36px; padding: 0 12px; border: 1px solid rgb(115 143 159 / .28); border-radius: 999px; color: #405d6e; background: rgb(255 255 255 / .62); font-size: 11px; font-weight: 700; }
+    .button.primary { border-color: color-mix(in srgb, var(--level) 75%, #fff); color: #fff; background: var(--level); box-shadow: 0 8px 18px color-mix(in srgb, var(--level) 24%, transparent); }
+    .operation-card .button { border-color: rgb(255 255 255 / .16); color: #d7e4eb; background: rgb(255 255 255 / .08); }
+    .operation-card .button.primary { border-color: color-mix(in srgb, var(--level) 74%, #fff); color: #fff; background: var(--level); }
+    body[data-level="medium"] .button.primary { color: #2d2100; }
+    .button:hover { filter: brightness(.96); }
+
+    .why { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .why article { padding: 13px 14px; border: 1px solid rgb(255 255 255 / .54); border-radius: 14px; background: rgb(255 255 255 / .34); color: #4f6775; font-size: 11px; }
+    .why strong { display: block; margin-bottom: 3px; color: #1c3b4d; font-size: 12px; }
+
+    .toast { position: fixed; z-index: 20; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 8px; padding: 11px 14px; border: 1px solid rgb(255 255 255 / .62); border-radius: 12px; color: #fff; background: rgb(7 35 66 / .88); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 16px 40px rgb(7 35 66 / .24); opacity: 0; transform: translateY(10px); pointer-events: none; transition: .18s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast svg { width: 16px; height: 16px; }
+
+    @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .toolbar, .stage, .context-page, .knowledge-card { background: rgb(248 251 252 / .96); }
+      .operation-card { background: rgb(8 28 47 / .97); }
+    }
+
+    @media (max-width: 1050px) {
+      .stage { grid-template-columns: 1fr; }
+      .cards-area { min-width: 0; }
+    }
+    @media (max-width: 720px) {
+      .shell { width: calc(100% - 20px); margin-top: 12px; }
+      .topline { align-items: flex-start; flex-direction: column; }
+      .material-note { text-align: left; }
+      .toolbar { align-items: stretch; flex-direction: column; }
+      .switch-group { align-items: stretch; flex-direction: column; }
+      .switch-label { display: none; }
+      .segmented { width: 100%; }
+      .segmented button { flex: 1; padding: 0 8px; }
+      .stage { min-height: 0; padding: 12px; border-radius: 20px; }
+      .cards { grid-template-columns: 1fr; }
+      .appnav { display: none; }
+      .page { padding: 18px 14px; }
+      .why { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body data-level="light">
+  <main class="shell">
+    <header class="topline">
+      <div>
+        <div class="brand"><img src="../extension/assets/pagecue-logo-1024.png" alt="页知">页知 · Card System 3.0</div>
+        <h1>同一等级，两种不同的玻璃</h1>
+        <p class="lead">知识是明亮玻璃，操作是烟熏玻璃；蓝、黄、红始终只表示提醒程度。</p>
+      </div>
+      <p class="material-note">背景只是为了验证透明材质。实际插件会读取网页环境，并在不支持模糊时自动降级。</p>
+    </header>
+
+    <section class="toolbar" aria-label="卡片演示控制">
+      <div class="switch-group">
+        <span class="switch-label">业务模板</span>
+        <div class="segmented" id="template-switch">
+          <button type="button" data-template="product" aria-pressed="true">产品</button>
+          <button type="button" data-template="customer" aria-pressed="false">客户</button>
+          <button type="button" data-template="inquiry" aria-pressed="false">询单</button>
+        </div>
+      </div>
+      <div class="switch-group">
+        <span class="switch-label">提醒等级</span>
+        <div class="segmented" id="level-switch">
+          <button type="button" data-level="light" aria-pressed="true">蓝色 · 轻度</button>
+          <button type="button" data-level="medium" aria-pressed="false">黄色 · 中度</button>
+          <button type="button" data-level="heavy" aria-pressed="false">红色 · 重度</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="stage">
+      <article class="context-page">
+        <div class="windowbar"><div class="dots"><i></i><i></i><i></i></div><div class="url" id="url">https://biochemsafebuy.com/product/504-24-5</div></div>
+        <div class="appbar"><div class="appname"><span>CHEM</span> 业务中心</div><nav class="appnav"><span>产品</span><span>客户</span><span>询单</span><span>报价</span></nav></div>
+        <div class="page">
+          <div class="breadcrumb" id="breadcrumb">产品中心 / 医药中间体 / 产品详情</div>
+          <h2 id="page-title">4-氨基吡啶</h2>
+          <div class="page-meta" id="page-meta"><span>CAS：504-24-5</span><span>纯度：99%</span><span>供应状态：可询价</span></div>
+          <section class="match-panel">
+            <strong id="panel-title">产品说明</strong>
+            <p id="panel-copy">本品为医药中间体。客户询价前，请注意其<span class="matched">运输与储存要求</span>，并确认用途范围。</p>
+          </section>
+          <section class="facts" id="page-facts">
+            <div class="fact"><span>产品编码</span><b>HT-504245</b></div><div class="fact"><span>相关资料</span><b>COA · SDS · 运输说明</b></div><div class="fact"><span>业务负责人</span><b>陈欣</b></div><div class="fact"><span>最近更新</span><b>今天 10:26</b></div>
+          </section>
+          <div class="context-foot">命中“运输与储存要求”后，页面只创建一个标记入口，相关卡片在右侧聚合显示。</div>
+        </div>
+      </article>
+
+      <section class="cards-area" aria-label="知识与操作卡片对比">
+        <header class="compare-head"><strong>当前命中 · 2条</strong><span id="compare-text">产品模板 / 轻度提醒</span></header>
+        <div class="cards">
+          <article class="reminder-card knowledge-card">
+            <div class="card-body">
+              <div class="card-type">
+                <span class="type-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5v-16ZM20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5v-16Z"/></svg>知识提醒</span>
+                <span class="level-chip">轻度</span>
+              </div>
+              <h3 class="card-title" id="knowledge-title">运输与储存说明</h3>
+              <p class="card-summary" id="knowledge-summary">该产品应密封、避光保存。发货前请核对对应批次的运输条件。</p>
+              <div class="entity-box">
+                <span class="entity-name" id="knowledge-entity">4-氨基吡啶 · 504-24-5</span>
+                <div class="entity-facts"><span id="knowledge-label-a">资料<b id="knowledge-value-a">SDS / 运输说明</b></span><span id="knowledge-label-b">更新人<b id="knowledge-value-b">质量部</b></span></div>
+              </div>
+              <a class="card-link" href="#" onclick="return false"><span id="knowledge-link">查看产品资料</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M8 7h9v9"/></svg></a>
+            </div>
+            <footer class="card-footer"><span class="footnote">组织知识 · 今天更新</span><div class="actions"><button class="button knowledge-action" type="button">知道了</button></div></footer>
+          </article>
+
+          <article class="reminder-card operation-card">
+            <div class="card-body">
+              <div class="card-type">
+                <span class="type-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3M9 5a3 3 0 0 1 6 0m-6 0a3 3 0 0 0 6 0m-6 0h6m3-2 3 3-8 8-4 1 1-4 8-8Z"/></svg>操作提醒</span>
+                <span class="level-chip">轻度</span>
+              </div>
+              <h3 class="card-title" id="operation-title">报价前核对运输条件</h3>
+              <p class="card-summary" id="operation-summary">确认客户收货地区和运输方式，并将要求写入报价备注。</p>
+              <div class="entity-box">
+                <span class="entity-name" id="operation-entity">4-氨基吡啶 · 当前询价</span>
+                <div class="entity-facts"><span id="operation-label-a">负责人<b id="operation-value-a">陈欣</b></span><span id="operation-label-b">期限<b id="operation-value-b">提交报价前</b></span></div>
+              </div>
+              <a class="card-link" href="#" onclick="return false"><span id="operation-link">打开报价单</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M8 7h9v9"/></svg></a>
+            </div>
+            <footer class="card-footer"><span class="footnote">业务操作 · 尚未完成</span><div class="actions"><button class="button" type="button">稍后</button><button class="button primary operation-action" type="button">完成了</button></div></footer>
+          </article>
+        </div>
+
+        <div class="why">
+          <article><strong>知识卡：明亮玻璃</strong>强调解释、参考资料和知识来源，不抢占业务页面注意力。</article>
+          <article><strong>操作卡：烟熏玻璃</strong>固定呈现负责人、期限和完成动作，反色但仍保留同一等级色。</article>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg><span>已记录</span></div>
+
+  <script>
+    const state = { template: "product", level: "light" };
+    const levelNames = { light: "轻度", medium: "中度", heavy: "重度" };
+    const data = {
+      product: {
+        url: "https://biochemsafebuy.com/product/504-24-5", breadcrumb: "产品中心 / 医药中间体 / 产品详情", pageTitle: "4-氨基吡啶", meta: ["CAS：504-24-5", "纯度：99%", "供应状态：可询价"], panelTitle: "产品说明", panelCopy: ["本品为医药中间体。客户询价前，请注意其", "运输与储存要求", "，并确认用途范围。"], facts: [["产品编码","HT-504245"],["相关资料","COA · SDS · 运输说明"],["业务负责人","陈欣"],["最近更新","今天 10:26"]],
+        knowledge: { title:"运输与储存说明", summary:"该产品应密封、避光保存。发货前请核对对应批次的运输条件。", entity:"4-氨基吡啶 · 504-24-5", a:["资料","SDS / 运输说明"], b:["更新人","质量部"], link:"查看产品资料" },
+        operation: { title:"报价前核对运输条件", summary:"确认客户收货地区和运输方式，并将要求写入报价备注。", entity:"4-氨基吡啶 · 当前询价", a:["负责人","陈欣"], b:["期限","提交报价前"], link:"打开报价单" }
+      },
+      customer: {
+        url: "https://crm.example.cn/customer/C-02891", breadcrumb: "客户管理 / 华中区域 / 客户详情", pageTitle: "湖北启源医药有限公司", meta: ["客户等级：A", "负责人：陈欣", "合作状态：跟进中"], panelTitle: "客户概况", panelCopy: ["该客户正在评估年度供应合作。提交正式报价前，请检查", "合同年限与信用条款", "。"], facts: [["客户编号","C-02891"],["所属行业","医药制造"],["累计询单","18 条"],["最近联系","昨天 16:40"]],
+        knowledge: { title:"客户合作与折扣口径", summary:"A类客户可申请年度框架折扣，但必须结合预计采购额和合同年限。", entity:"湖北启源医药 · A类客户", a:["合作资料","历史报价 / 合同"], b:["更新人","销售管理部"], link:"查看客户知识" },
+        operation: { title:"补充合同年限", summary:"当前客户档案缺少计划合同年限，补充后再申请企业折扣。", entity:"湖北启源医药 · 客户档案", a:["负责人","陈欣"], b:["期限","今天 18:00"], link:"打开客户资料" }
+      },
+      inquiry: {
+        url: "https://sales.example.cn/inquiry/Q-20260719-031", breadcrumb: "询单管理 / 网站询价 / 询单详情", pageTitle: "Q-20260719-031", meta: ["客户：湖北启源医药", "负责人：陈欣", "状态：待报价"], panelTitle: "询单需求", panelCopy: ["客户需要500kg样品用于中试，并选择了", "企业版报价", "，要求今天反馈。"], facts: [["询单来源","官网"],["目标产品","4-氨基吡啶"],["需求数量","500 kg"],["报价状态","待提交"]],
+        knowledge: { title:"企业版报价适用规则", summary:"企业版报价应同时核对客户规模、合同年限和预计年度采购额。", entity:"Q-20260719-031 · 企业报价", a:["资料","折扣规则 / 案例"], b:["更新人","销售管理部"], link:"查看报价规则" },
+        operation: { title:"确认折扣范围并提交报价", summary:"请完成客户条件核验，将折扣依据写入备注后提交本次报价。", entity:"Q-20260719-031 · 待报价", a:["负责人","陈欣"], b:["期限","今天 17:30"], link:"进入报价页面" }
+      }
+    };
+
+    const $ = id => document.getElementById(id);
+    let toastTimer;
+
+    function setPair(prefix, key, pair) { $(prefix + "-label-" + key).childNodes[0].textContent = pair[0]; $(prefix + "-value-" + key).textContent = pair[1]; }
+
+    function render() {
+      document.body.dataset.level = state.level;
+      document.querySelectorAll("#template-switch button").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.template === state.template)));
+      document.querySelectorAll("#level-switch button").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.level === state.level)));
+      document.querySelectorAll(".level-chip").forEach(chip => chip.textContent = levelNames[state.level]);
+      $("compare-text").textContent = ({product:"产品",customer:"客户",inquiry:"询单"})[state.template] + "模板 / " + levelNames[state.level] + "提醒";
+
+      const item = data[state.template];
+      $("url").textContent = item.url; $("breadcrumb").textContent = item.breadcrumb; $("page-title").textContent = item.pageTitle;
+      $("page-meta").innerHTML = item.meta.map(value => `<span>${value}</span>`).join("");
+      $("panel-title").textContent = item.panelTitle;
+      $("panel-copy").innerHTML = `${item.panelCopy[0]}<span class="matched">${item.panelCopy[1]}</span>${item.panelCopy[2]}`;
+      $("page-facts").innerHTML = item.facts.map(pair => `<div class="fact"><span>${pair[0]}</span><b>${pair[1]}</b></div>`).join("");
+
+      for (const type of ["knowledge","operation"]) {
+        const card = item[type];
+        $(type + "-title").textContent = card.title; $(type + "-summary").textContent = card.summary; $(type + "-entity").textContent = card.entity; $(type + "-link").textContent = card.link;
+        setPair(type, "a", card.a); setPair(type, "b", card.b);
+      }
+
+      const knowledgeAction = document.querySelector(".knowledge-action");
+      knowledgeAction.textContent = state.level === "light" ? "知道了" : state.level === "medium" ? "确认知悉" : "我已阅读";
+      document.querySelector(".operation-action").textContent = state.level === "heavy" ? "立即处理" : "完成了";
+    }
+
+    function showToast(message) {
+      $("toast").querySelector("span").textContent = message;
+      $("toast").classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2200);
+    }
+
+    $("template-switch").addEventListener("click", event => { const button = event.target.closest("button[data-template]"); if (!button) return; state.template = button.dataset.template; render(); });
+    $("level-switch").addEventListener("click", event => { const button = event.target.closest("button[data-level]"); if (!button) return; state.level = button.dataset.level; render(); });
+    document.querySelector(".knowledge-action").addEventListener("click", () => showToast("已记录知识确认"));
+    document.querySelector(".operation-action").addEventListener("click", () => showToast("已记录操作状态"));
+    render();
+  </script>
+</body>
+</html>
